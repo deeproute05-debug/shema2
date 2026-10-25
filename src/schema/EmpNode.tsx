@@ -40,12 +40,13 @@ export function EmpNodeFactory(
     // the visible handle dots are only visual affordances, sized for a
     // comfortable touch hit area.
     const handleStyle = showHandles
-      ? { opacity: 1, background: '#2563eb', border: '2px solid white', width: '14px', height: '14px' }
+      ? { opacity: 1, background: '#2563eb', border: '2px solid white', width: coarsePointer ? '14px' : '10px', height: coarsePointer ? '14px' : '10px' }
       : { opacity: 0 };
     const pmHandleStyle = showHandles && connectMode === 'pm'
-      ? { opacity: 1, background: '#d97706', border: '2px solid white', width: '14px', height: '14px' }
+      ? { opacity: 1, background: '#d97706', border: '2px solid white', width: coarsePointer ? '14px' : '10px', height: coarsePointer ? '14px' : '10px' }
       : { opacity: 0 };
-    const isConnectMode = showHandles && (connectMode === 'manager' || connectMode === 'pm');
+    // Tap flow is for coarse pointers only; mouse users keep click = open panel + drag-to-connect.
+    const isConnectMode = !!coarsePointer && showHandles && (connectMode === 'manager' || connectMode === 'pm');
     const hasPendingSource = pendingConnectSource !== null;
     const isPendingTarget = hasPendingSource && pendingConnectSource !== emp.id;
 

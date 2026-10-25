@@ -152,7 +152,7 @@ function SchemaScreenInner() {
     if (!structure) return undefined;
     return {
       deptNode: DeptNodeFactory(structure.depts, structure.emps, handleSelectDept, toggleCollapse, collapsed, highlightIds),
-      empNode: EmpNodeFactory(structure.emps, structure.depts, handleSelectEmp, highlightIds),
+      empNode: EmpNodeFactory(structure.emps, structure.depts, handleSelectEmp, highlightIds, false, 'none', null),
       freeNode: FreeNodeFactory(structure.freeNodes),
     };
   }, [structure, handleSelectDept, handleSelectEmp, toggleCollapse, collapsed, highlightIds]);

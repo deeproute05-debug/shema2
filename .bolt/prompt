@@ -1,0 +1,15 @@
+For all designs I ask you to make, have them be beautiful, not cookie cutter. Make webpages that are fully featured and worthy for production.
+
+By default, this template supports JSX syntax with Tailwind CSS classes, React hooks, and Lucide React for icons. Do not install other packages for UI themes, icons, etc unless absolutely necessary or I request them.
+
+Use icons from lucide-react for logos.
+
+Import project modules with the `@/` path alias, which maps to `src/` (e.g. `@/components/Foo` == `src/components/Foo`), instead of deep relative paths like `../../components/Foo`.
+## Test safety (standing rule)
+- Tests never modify real data, roles, triggers or users. No DISABLE TRIGGER, no non-TEMP backup tables, no creating/deleting users.
+- Use a single BEGIN ... ROLLBACK under simulated sessions (SET LOCAL ROLE + JWT claims), or stop and ask.
+- Report SQLSTATE and message for every expected failure; "0 rows" alone is not evidence.
+- Functions used by RLS policies (is_writer, is_owner) stay executable by authenticated; never revoke grants without a viewer SELECT test afterwards.
+- Trigger functions: revoke EXECUTE from PUBLIC, anon, authenticated.
+- Never create, edit or delete users, passwords or invitations unless the task says so. No destructive SQL (DROP, TRUNCATE, DELETE without WHERE) without approval.
+- Service worker caches only the static shell, never API/auth responses.

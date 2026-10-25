@@ -234,7 +234,7 @@ export const en = {
     manager_disconnected: 'Manager disconnected.',
     select_edge_to_disconnect: 'Select a manager line, then click "Disconnect manager" to remove it.',
     connect_pm: 'Connect project manager',
-    connect_pm_on: 'Connecting: drag from a card to its project manager',
+    connect_pm_on: 'Drag from the project manager\'s dot to the employee\'s left dot.',
     connect_pm_off: 'Connect project manager',
     disconnect_pm: 'Disconnect project manager',
     pm_set: 'Project manager set.',

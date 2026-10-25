@@ -233,7 +233,7 @@ export const ru = {
     show_minimap: 'Показать мини-карту',
     hide_minimap: 'Скрыть мини-карту',
     connect_manager: 'Назначить руководителя',
-    connect_manager_on: 'Подключение: перетащите от карточки к руководителю',
+    connect_manager_on: 'Тяните от точки руководителя к точке сотрудника (любая точка).',
     connect_manager_off: 'Назначить руководителя',
     disconnect_manager: 'Отвязать руководителя',
     manager_set: 'Руководитель назначен.',

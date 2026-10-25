@@ -60,7 +60,7 @@ export function EmpNodeFactory(
         }}
         dir="ltr"
       >
-        <Handle type="target" position={Position.Top} style={handleStyle} isConnectableStart={false} isConnectableEnd={showHandles} />
+        <Handle type="target" position={Position.Top} style={handleStyle} isConnectableStart={showHandles} isConnectableEnd={showHandles} />
         <div className="flex items-center gap-2">
           {emp.is_vacancy ? (
             <Briefcase className="h-5 w-5 shrink-0 text-warning-500" />
@@ -81,8 +81,8 @@ export function EmpNodeFactory(
         </div>
         {dept && <p className="mt-0.5 truncate text-xs text-ink-400">{dept.name}</p>}
         {subCount > 0 && <p className="text-xs text-ink-400">{t('schema.reports', { count: subCount })}</p>}
-        <Handle type="source" position={Position.Bottom} style={handleStyle} isConnectableStart={showHandles} isConnectableEnd={false} />
-        <Handle type="target" position={Position.Left} id="pm-handle" style={pmHandleStyle} isConnectableStart={showHandles && connectMode === 'pm'} isConnectableEnd={showHandles} />
+        <Handle type="source" position={Position.Bottom} style={handleStyle} isConnectableStart={showHandles} isConnectableEnd={showHandles} />
+        <Handle type="target" position={Position.Left} id="pm-handle" style={pmHandleStyle} isConnectableStart={showHandles && connectMode === 'pm'} isConnectableEnd={showHandles && connectMode === 'pm'} />
       </div>
     );
   });

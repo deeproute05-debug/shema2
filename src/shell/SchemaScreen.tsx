@@ -358,7 +358,7 @@ function SchemaScreenInner() {
       deptNode: DeptNodeFactory(structure.depts, structure.emps, handleSelectDept, toggleCollapse, collapsed, highlightIds),
       empNode: EmpNodeFactory(
         structure.emps, structure.depts, handleSelectEmp, highlightIds,
-        canEdit && tab === 'org' && connectMode === 'manager' && (!coarsePointer || touchEdit),
+        canEdit && tab === 'matrix' && connectMode === 'manager' && (!coarsePointer || touchEdit),
         connectMode,
         pendingConnectSource,
         handleConnectTarget,
@@ -488,7 +488,7 @@ function SchemaScreenInner() {
             minZoom={0.05}
             maxZoom={2}
             nodesDraggable={canEdit && tab !== 'free' && (!coarsePointer || touchEdit) && connectMode === 'none'}
-            nodesConnectable={canEdit && tab === 'org' && connectMode === 'manager' && (!coarsePointer || touchEdit)}
+            nodesConnectable={canEdit && tab === 'matrix' && connectMode === 'manager' && (!coarsePointer || touchEdit)}
             onConnect={handleConnect}
             onEdgeClick={handleEdgeClick}
             elementsSelectable
@@ -542,7 +542,7 @@ function SchemaScreenInner() {
             </p>
           )}
           {/* Connect-manager toolbar — editor/owner, org tab only */}
-          {canEdit && tab === 'org' && (!coarsePointer || touchEdit) && (
+          {canEdit && tab === 'matrix' && (!coarsePointer || touchEdit) && (
             <button
               onClick={toggleConnectMode}
               className={`absolute top-3 right-3 z-10 inline-flex min-h-[44px] items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium shadow-md transition-colors ${
@@ -557,13 +557,13 @@ function SchemaScreenInner() {
               <span className="hidden sm:inline">{t('schema.connect_manager')}</span>
             </button>
           )}
-          {connectMode === 'manager' && canEdit && tab === 'org' && (
+          {connectMode === 'manager' && canEdit && tab === 'matrix' && (
             <p className="pointer-events-none absolute top-16 right-3 z-10 max-w-[220px] rounded-md bg-ink-900/80 px-2 py-1 text-xs text-white dark:bg-ink-700/80">
               {t('schema.connect_manager_on')}
             </p>
           )}
           {/* Disconnect button when a manager edge is selected */}
-          {canEdit && tab === 'org' && selectedEdgeId && (
+          {canEdit && tab === 'matrix' && selectedEdgeId && (
             <button
               onClick={handleDisconnectManager}
               className="absolute bottom-4 right-4 z-10 inline-flex min-h-[44px] items-center gap-2 rounded-lg border border-danger-300 bg-white px-3 py-2 text-sm font-medium text-danger-600 shadow-md transition-colors hover:bg-danger-50 dark:border-danger-700 dark:bg-ink-900 dark:text-danger-400 dark:hover:bg-ink-800"

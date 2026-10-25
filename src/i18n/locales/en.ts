@@ -226,7 +226,7 @@ export const en = {
     show_minimap: 'Show minimap',
     hide_minimap: 'Hide minimap',
     connect_manager: 'Connect manager',
-    connect_manager_on: 'Connecting: drag from a card to its manager',
+    connect_manager_on: 'Drag from the manager\'s dot to the employee\'s dot (any dot works).',
     connect_manager_off: 'Connect manager',
     disconnect_manager: 'Disconnect manager',
     manager_set: 'Manager set.',

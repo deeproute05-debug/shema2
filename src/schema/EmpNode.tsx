@@ -29,6 +29,7 @@ export function EmpNodeFactory(
 ) {
   const Component = memo(({ data, selected }: NodeProps) => {
     const { t } = useTranslation();
+    const [addMenuOpen, setAddMenuOpen] = useState(false);
     const emp = employees.find((e) => e.id === (data as { empId: string }).empId);
     if (!emp) return null;
     const dept = depts.find((d) => d.id === emp.department_id);
@@ -52,7 +53,6 @@ export function EmpNodeFactory(
     const hasPendingSource = pendingConnectSource !== null;
     const isPendingTarget = hasPendingSource && pendingConnectSource !== emp.id;
     const canShowAdd = !!showAddButton && !!onAddEmployee && !isConnectMode && !showHandles;
-    const [addMenuOpen, setAddMenuOpen] = useState(false);
 
     return (
       <div

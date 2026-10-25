@@ -603,6 +603,8 @@ function SchemaScreenInner() {
     const base = parsed.data;
     const insertData = {
       ...base,
+      // A vacancy never stores a name, even if one was typed before ticking the box.
+      full_name: base.is_vacancy ? '' : base.full_name,
       // Subordinate: manager = clicked employee, dept = clicked employee's dept.
       // Colleague: same dept and same manager as the clicked employee.
       department_id: sourceEmp.department_id,

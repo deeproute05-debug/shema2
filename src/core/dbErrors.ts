@@ -10,6 +10,7 @@ export function extractDbError(error: PostgrestError | { message?: string } | nu
   if (msg.includes('own project manager')) return 'errors.self_project_manager';
   if (msg.includes('sub-department')) return 'errors.dept_has_children';
   if (msg.includes('employees. Move them')) return 'errors.dept_has_employees';
+  if (msg.includes('violates foreign key constraint')) return 'errors.invalid_department';
   if (msg.includes('Only owners and editors')) return 'errors.insufficient_privilege';
   if (msg.includes('Company already exists')) return 'errors.company_exists';
   if (msg.includes('row-level security')) return 'errors.permission_denied';

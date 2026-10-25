@@ -168,6 +168,7 @@ export const ru = {
     self_project_manager: 'Сотрудник не может быть своим собственным проектным руководителем.',
     dept_has_children: 'Нельзя удалить подразделение с дочерними. Сначала переместите их.',
     dept_has_employees: 'Нельзя удалить подразделение с сотрудниками. Сначала переместите их.',
+    invalid_department: 'Такого подразделения не существует.',
     insufficient_privilege: 'Недостаточно прав для этого действия.',
     company_exists: 'Компания уже существует.',
     permission_denied: 'У вас нет прав для этого действия.',
@@ -246,6 +247,10 @@ export const ru = {
     disconnect_pm: 'Отвязать проектного руководителя',
     pm_set: 'Проектный руководитель назначен.',
     pm_disconnected: 'Проектный руководитель отвязан.',
+    move_emp_title: 'Переместить сотрудника',
+    move_emp_confirm: 'Переместить {{name}} в «{{department}}»?',
+    move_emp_confirm_btn: 'Переместить',
+    emp_moved: 'Сотрудник перемещён.',
   },
   templates: {
     small_business: 'Малый бизнес',

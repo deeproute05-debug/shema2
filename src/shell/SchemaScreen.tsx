@@ -9,7 +9,7 @@ import { Loader as Loader2, Search, Workflow, Table, Network, Boxes, Sparkles, F
 import { supabase, type Department, type Employee, type FreeNode, type FreeEdge, type NodePosition, type PositionView } from '@/core/supabase';
 import { extractDbError } from '@/core/dbErrors';
 import { toastError, toastSuccess, toastInfo } from '@/core/toast';
-import { layoutOrgChart, layoutMatrix, buildPositionMap, detectManagerCycle, detectProjectManagerCycle, type PositionMap } from '@/schema/layout';
+import { layoutOrgChart, layoutMatrix, buildPositionMap, detectManagerCycle, detectProjectManagerCycle, NODE_W, DEPT_H, EMP_H, type PositionMap } from '@/schema/layout';
 import { DeptNodeFactory } from '@/schema/DeptNode';
 import { EmpNodeFactory, type ConnectMode } from '@/schema/EmpNode';
 import { SidePanel } from '@/schema/SidePanel';
@@ -23,6 +23,24 @@ interface StructureData {
   emps: Employee[];
   freeNodes: FreeNode[];
   freeEdges: FreeEdge[];
+}
+
+// Hit-test: find the visible department node whose bounds contain the
+// dragged employee card's center. If several overlap, return the smallest.
+function findDeptAtNode(allNodes: Node[], draggedNode: Node): string | null {
+  const cx = draggedNode.position.x + NODE_W / 2;
+  const cy = draggedNode.position.y + EMP_H / 2;
+  let best: { id: string; area: number } | null = null;
+  for (const n of allNodes) {
+    if (n.type !== 'deptNode' || n.id === draggedNode.id) continue;
+    const nx = n.position.x;
+    const ny = n.position.y;
+    if (cx >= nx && cx <= nx + NODE_W && cy >= ny && cy <= ny + DEPT_H) {
+      const area = NODE_W * DEPT_H;
+      if (!best || area < best.area) best = { id: n.id.replace(/^dept:/, ''), area };
+    }
+  }
+  return best?.id ?? null;
 }
 
 export function SchemaScreen() {
@@ -56,6 +74,9 @@ function SchemaScreenInner() {
   const posMapRef = useRef<PositionMap>(new Map());
   const userInteractedRef = useRef(false);
   const firstLoadRef = useRef(true);
+  const nodesRef = useRef<Node[]>([]);
+  const dragStateRef = useRef<{ id: string; x: number; y: number } | null>(null);
+  const hoverDeptIdRef = useRef<string | null>(null);
   const [coarsePointer, setCoarsePointer] = useState(() => {
     if (typeof window !== 'undefined') return window.matchMedia('(pointer: coarse)').matches;
     return false;
@@ -64,9 +85,11 @@ function SchemaScreenInner() {
   const [connectMode, setConnectMode] = useState<ConnectMode>('none');
   const [pendingConnectSource, setPendingConnectSource] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [moveTarget, setMoveTarget] = useState<{ empId: string; empName: string; deptId: string; deptName: string; prevX: number; prevY: number } | null>(null);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  nodesRef.current = nodes;
 
   const loadData = useCallback(async () => {
     const isFirst = firstLoadRef.current;
@@ -249,19 +272,123 @@ function SchemaScreenInner() {
   }, [onNodesChange]);
 
   const handleNodeDragStop = useCallback((_: MouseEvent | TouchEvent, node: Node) => {
+    // Clear any hover ring left from the drag.
+    if (hoverDeptIdRef.current !== null) {
+      hoverDeptIdRef.current = null;
+      setNodes((prev) => prev.map((n) => n.type === 'deptNode' ? { ...n, className: undefined } : n));
+    }
     if (!canEdit || !currentView) return;
     const isDept = node.type === 'deptNode';
+    // Org-tab employee dropped on a different department → confirm move.
+    // Do NOT save the dropped position in this case.
+    if (!isDept && tab === 'org') {
+      const empId = (node.data as { empId: string }).empId;
+      if (empId) {
+        const dropDeptId = findDeptAtNode(nodesRef.current, node);
+        if (dropDeptId) {
+          const emp = structure?.emps.find((e) => e.id === empId);
+          const dept = structure?.depts.find((d) => d.id === dropDeptId);
+          if (emp && dept && emp.department_id !== dropDeptId) {
+            const start = dragStateRef.current;
+            setMoveTarget({
+              empId,
+              empName: emp.is_vacancy ? t('employees.vacancy_label') : emp.full_name,
+              deptId: dropDeptId,
+              deptName: dept.name,
+              prevX: start ? start.x : node.position.x,
+              prevY: start ? start.y : node.position.y,
+            });
+            return;
+          }
+        }
+      }
+    }
     const entityType = isDept ? 'department' : 'employee';
     const entityId = isDept
       ? (node.data as { deptId: string }).deptId
       : (node.data as { empId: string }).empId;
     if (!entityId) return;
     void savePosition(currentView, entityType, entityId, node.position.x, node.position.y);
-  }, [canEdit, currentView, savePosition]);
+  }, [canEdit, currentView, savePosition, tab, structure, t, setNodes]);
 
   const handleMove = useCallback((event: MouseEvent | TouchEvent | null) => {
     if (event !== null) userInteractedRef.current = true;
   }, []);
+
+  const handleNodeDragStart = useCallback((_: MouseEvent | TouchEvent, node: Node) => {
+    if (node.type === 'empNode') {
+      dragStateRef.current = { id: node.id, x: node.position.x, y: node.position.y };
+    }
+  }, []);
+
+  const handleNodeDrag = useCallback((_: MouseEvent | TouchEvent, node: Node) => {
+    if (!canEdit || tab !== 'org' || node.type !== 'empNode') return;
+    const empId = (node.data as { empId: string }).empId;
+    const emp = structure?.emps.find((e) => e.id === empId);
+    if (!emp) return;
+    const dropDeptId = findDeptAtNode(nodesRef.current, node);
+    const targetId = dropDeptId && dropDeptId !== emp.department_id ? dropDeptId : null;
+    if (hoverDeptIdRef.current === targetId) return;
+    hoverDeptIdRef.current = targetId;
+    setNodes((prev) => prev.map((n) => {
+      if (n.type !== 'deptNode') return n;
+      const isTarget = targetId !== null && n.id === `dept:${targetId}`;
+      const hasRing = typeof n.className === 'string' && n.className.includes('ring-brand-400');
+      if (isTarget && !hasRing) return { ...n, className: 'z-10 ring-2 ring-brand-400 rounded-lg' };
+      if (!isTarget && hasRing) return { ...n, className: undefined };
+      return n;
+    }));
+  }, [canEdit, tab, structure, setNodes]);
+
+  const moveEmpDept = useCallback(async (empId: string, newDeptId: string) => {
+    if (!structure) return;
+    const prevEmps = structure.emps;
+    setStructure((prev) => prev ? {
+      ...prev,
+      emps: prev.emps.map((e) => e.id === empId ? { ...e, department_id: newDeptId } : e),
+    } : prev);
+    const { data, error } = await supabase
+      .from('employees')
+      .update({ department_id: newDeptId })
+      .eq('id', empId)
+      .select('id');
+    if (error) {
+      setStructure((prev) => prev ? { ...prev, emps: prevEmps } : prev);
+      toastError(t(extractDbError(error)));
+      return;
+    }
+    if (!data || data.length === 0) {
+      setStructure((prev) => prev ? { ...prev, emps: prevEmps } : prev);
+      toastError(t('errors.permission_denied'));
+      return;
+    }
+    // Delete only this employee's org-view saved position so the layout
+    // places the card under the new department.
+    const { error: delError } = await supabase
+      .from('node_positions')
+      .delete()
+      .eq('view', 'org')
+      .eq('entity_type', 'employee')
+      .eq('entity_id', empId);
+    if (delError) {
+      toastError(t(extractDbError(delError)));
+    }
+    setPositions((prev) => prev.filter((p) => !(p.view === 'org' && p.entity_type === 'employee' && p.entity_id === empId)));
+    toastSuccess(t('schema.emp_moved'));
+  }, [structure, t]);
+
+  const confirmMove = useCallback(() => {
+    if (!moveTarget) return;
+    const target = moveTarget;
+    setMoveTarget(null);
+    void moveEmpDept(target.empId, target.deptId);
+  }, [moveTarget, moveEmpDept]);
+
+  const cancelMove = useCallback(() => {
+    if (!moveTarget) return;
+    setNodes((prev) => prev.map((n) => n.id === `emp:${moveTarget.empId}` ? { ...n, position: { x: moveTarget.prevX, y: moveTarget.prevY } } : n));
+    setMoveTarget(null);
+  }, [moveTarget, setNodes]);
 
   const setManager = useCallback(async (empId: string, newManagerId: string | null) => {
     if (!structure) return;
@@ -543,6 +670,8 @@ function SchemaScreenInner() {
             edges={edges}
             onNodesChange={handleNodesChange}
             onEdgesChange={onEdgesChange}
+            onNodeDragStart={handleNodeDragStart}
+            onNodeDrag={handleNodeDrag}
             onNodeDragStop={handleNodeDragStop}
             onMove={handleMove}
             nodeTypes={nodeTypes}
@@ -721,6 +850,16 @@ function SchemaScreenInner() {
         confirmLabel={t('schema.reset_layout')}
         onConfirm={() => void handleResetLayout()}
         onCancel={() => setResetOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={moveTarget !== null}
+        title={t('schema.move_emp_title')}
+        message={moveTarget ? t('schema.move_emp_confirm', { name: moveTarget.empName, department: moveTarget.deptName }) : ''}
+        confirmLabel={t('schema.move_emp_confirm_btn')}
+        confirmKind="primary"
+        onConfirm={confirmMove}
+        onCancel={cancelMove}
       />
     </div>
   );

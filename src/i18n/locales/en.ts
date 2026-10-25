@@ -168,6 +168,7 @@ export const en = {
     self_project_manager: 'An employee cannot be their own project manager.',
     dept_has_children: 'Cannot delete a department with sub-departments. Move them first.',
     dept_has_employees: 'Cannot delete a department with employees. Move them first.',
+    invalid_department: 'That department does not exist.',
     insufficient_privilege: 'Insufficient privileges for this action.',
     company_exists: 'Company already exists.',
     permission_denied: 'You do not have permission for this action.',
@@ -239,6 +240,10 @@ export const en = {
     disconnect_pm: 'Disconnect project manager',
     pm_set: 'Project manager set.',
     pm_disconnected: 'Project manager disconnected.',
+    move_emp_title: 'Move employee',
+    move_emp_confirm: 'Move {{name}} to {{department}}?',
+    move_emp_confirm_btn: 'Move',
+    emp_moved: 'Employee moved.',
   },
   templates: {
     small_business: 'Small business',

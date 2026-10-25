@@ -2,9 +2,9 @@ import dagre from 'dagre';
 import type { Node, Edge } from '@xyflow/react';
 import type { Department, Employee, PositionView } from '@/core/supabase';
 
-const NODE_W = 200;
-const DEPT_H = 64;
-const EMP_H = 80;
+export const NODE_W = 200;
+export const DEPT_H = 64;
+export const EMP_H = 80;
 
 export type PositionMap = Map<string, { x: number; y: number }>;
 

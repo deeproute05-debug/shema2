@@ -184,6 +184,7 @@ export function layoutMatrix(
         id: `pm:${e.project_manager_id}-${e.id}`,
         source: `emp:${e.project_manager_id}`,
         target: `emp:${e.id}`,
+        targetHandle: 'pm-handle',
         type: 'smoothstep',
         style: { stroke: '#d97706', strokeWidth: 1.5, strokeDasharray: '5 5' },
       });

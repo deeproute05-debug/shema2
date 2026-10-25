@@ -162,6 +162,7 @@ export const en = {
   },
   errors: {
     cycle_detected: 'A cycle was detected in the hierarchy.',
+    pm_cycle_detected: 'A cycle was detected in the project-manager hierarchy.',
     own_parent: 'A department cannot be its own parent.',
     self_manager: 'An employee cannot manage themselves.',
     self_project_manager: 'An employee cannot be their own project manager.',
@@ -232,6 +233,12 @@ export const en = {
     manager_set: 'Manager set.',
     manager_disconnected: 'Manager disconnected.',
     select_edge_to_disconnect: 'Select a manager line, then click "Disconnect manager" to remove it.',
+    connect_pm: 'Connect project manager',
+    connect_pm_on: 'Connecting: drag from a card to its project manager',
+    connect_pm_off: 'Connect project manager',
+    disconnect_pm: 'Disconnect project manager',
+    pm_set: 'Project manager set.',
+    pm_disconnected: 'Project manager disconnected.',
   },
   templates: {
     small_business: 'Small business',

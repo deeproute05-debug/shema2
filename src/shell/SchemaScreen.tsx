@@ -9,7 +9,7 @@ import { Loader as Loader2, Search, Workflow, Table, Network, Boxes, Sparkles, F
 import { supabase, type Department, type Employee, type FreeNode, type FreeEdge, type NodePosition, type PositionView } from '@/core/supabase';
 import { extractDbError } from '@/core/dbErrors';
 import { toastError, toastSuccess, toastInfo } from '@/core/toast';
-import { layoutOrgChart, layoutMatrix, buildPositionMap, detectManagerCycle, type PositionMap } from '@/schema/layout';
+import { layoutOrgChart, layoutMatrix, buildPositionMap, detectManagerCycle, detectProjectManagerCycle, type PositionMap } from '@/schema/layout';
 import { DeptNodeFactory } from '@/schema/DeptNode';
 import { EmpNodeFactory, type ConnectMode } from '@/schema/EmpNode';
 import { SidePanel } from '@/schema/SidePanel';
@@ -306,25 +306,76 @@ function SchemaScreenInner() {
     toastSuccess(t(newManagerId === null ? 'schema.manager_disconnected' : 'schema.manager_set'));
   }, [structure, t]);
 
-  const handleConnect = useCallback((connection: { source: string | null; target: string | null }) => {
-    if (!connection.source || !connection.target) return;
-    const sourceEmpId = connection.source.replace(/^emp:/, '');
-    const targetEmpId = connection.target.replace(/^emp:/, '');
-    void setManager(targetEmpId, sourceEmpId);
-    setPendingConnectSource(null);
-  }, [setManager]);
+  const setProjectManager = useCallback(async (empId: string, newPmId: string | null) => {
+    if (!structure) return;
+    const emp = structure.emps.find((e) => e.id === empId);
+    if (!emp) return;
 
-  const handleConnectTarget = useCallback((targetId: string, _kind: 'manager' | 'pm') => {
+    if (newPmId !== null) {
+      if (newPmId === empId) {
+        toastError(t('errors.self_project_manager'));
+        return;
+      }
+      if (detectProjectManagerCycle(structure.emps, empId, newPmId)) {
+        toastError(t('errors.pm_cycle_detected'));
+        return;
+      }
+    }
+
+    const prevEmps = structure.emps;
+    setStructure((prev) => prev ? {
+      ...prev,
+      emps: prev.emps.map((e) => e.id === empId ? { ...e, project_manager_id: newPmId } : e),
+    } : prev);
+
+    const { data, error } = await supabase
+      .from('employees')
+      .update({ project_manager_id: newPmId })
+      .eq('id', empId)
+      .select('id');
+
+    if (error) {
+      setStructure((prev) => prev ? { ...prev, emps: prevEmps } : prev);
+      toastError(t(extractDbError(error)));
+      return;
+    }
+    if (!data || data.length === 0) {
+      setStructure((prev) => prev ? { ...prev, emps: prevEmps } : prev);
+      toastError(t('errors.permission_denied'));
+      return;
+    }
+
+    toastSuccess(t(newPmId === null ? 'schema.pm_disconnected' : 'schema.pm_set'));
+  }, [structure, t]);
+
+  const handleConnect = useCallback((connection: { source: string | null; target: string | null; sourceHandle?: string | null; targetHandle?: string | null }) => {
+    if (!connection.source || !connection.target) return;
+    // Ignore connections that do not match the active connect mode.
+    if (connectMode === 'manager') {
+      void setManager(connection.target.replace(/^emp:/, ''), connection.source.replace(/^emp:/, ''));
+    } else if (connectMode === 'pm') {
+      void setProjectManager(connection.target.replace(/^emp:/, ''), connection.source.replace(/^emp:/, ''));
+    }
+    setPendingConnectSource(null);
+  }, [connectMode, setManager, setProjectManager]);
+
+  const handleConnectTarget = useCallback((targetId: string, kind: 'manager' | 'pm') => {
     if (!pendingConnectSource || pendingConnectSource === targetId) {
       setPendingConnectSource(null);
       return;
     }
-    void setManager(targetId, pendingConnectSource);
+    if (kind === 'manager') {
+      void setManager(targetId, pendingConnectSource);
+    } else {
+      void setProjectManager(targetId, pendingConnectSource);
+    }
     setPendingConnectSource(null);
-  }, [pendingConnectSource, setManager]);
+  }, [pendingConnectSource, setManager, setProjectManager]);
 
   const handleEdgeClick = useCallback((_: React.MouseEvent, edge: Edge) => {
-    if (edge.id.startsWith('mgr:')) {
+    // Identify edge type by its target handle (pm edges use 'pm-handle');
+    // never parse the UUID portion of the edge id.
+    if (edge.targetHandle === 'pm-handle' || edge.id.startsWith('mgr:')) {
       setSelectedEdgeId(edge.id);
       setSelectedEmpId(null);
       setSelectedDeptId(null);
@@ -334,7 +385,7 @@ function SchemaScreenInner() {
     }
   }, []);
 
-  const handleDisconnectManager = useCallback(() => {
+  const handleDisconnectEdge = useCallback(() => {
     if (!selectedEdgeId) return;
     const edge = edges.find((e) => e.id === selectedEdgeId);
     if (!edge) {
@@ -342,12 +393,23 @@ function SchemaScreenInner() {
       toastError(t('common.unknown_error'));
       return;
     }
-    void setManager(edge.target.replace(/^emp:/, ''), null);
+    const targetEmpId = edge.target.replace(/^emp:/, '');
+    if (edge.targetHandle === 'pm-handle') {
+      void setProjectManager(targetEmpId, null);
+    } else {
+      void setManager(targetEmpId, null);
+    }
     setSelectedEdgeId(null);
-  }, [selectedEdgeId, edges, setManager, t]);
+  }, [selectedEdgeId, edges, setManager, setProjectManager, t]);
 
   const toggleConnectMode = useCallback(() => {
     setConnectMode((prev) => prev === 'manager' ? 'none' : 'manager');
+    setPendingConnectSource(null);
+    setSelectedEdgeId(null);
+  }, []);
+
+  const togglePmMode = useCallback(() => {
+    setConnectMode((prev) => prev === 'pm' ? 'none' : 'pm');
     setPendingConnectSource(null);
     setSelectedEdgeId(null);
   }, []);
@@ -358,7 +420,7 @@ function SchemaScreenInner() {
       deptNode: DeptNodeFactory(structure.depts, structure.emps, handleSelectDept, toggleCollapse, collapsed, highlightIds),
       empNode: EmpNodeFactory(
         structure.emps, structure.depts, handleSelectEmp, highlightIds,
-        canEdit && tab === 'matrix' && connectMode === 'manager' && (!coarsePointer || touchEdit),
+        canEdit && tab === 'matrix' && connectMode !== 'none' && (!coarsePointer || touchEdit),
         connectMode,
         pendingConnectSource,
         handleConnectTarget,
@@ -488,7 +550,7 @@ function SchemaScreenInner() {
             minZoom={0.05}
             maxZoom={2}
             nodesDraggable={canEdit && tab !== 'free' && (!coarsePointer || touchEdit) && connectMode === 'none'}
-            nodesConnectable={canEdit && tab === 'matrix' && connectMode === 'manager' && (!coarsePointer || touchEdit)}
+            nodesConnectable={canEdit && tab === 'matrix' && connectMode !== 'none' && (!coarsePointer || touchEdit)}
             onConnect={handleConnect}
             onEdgeClick={handleEdgeClick}
             elementsSelectable
@@ -541,35 +603,58 @@ function SchemaScreenInner() {
               {t('schema.touch_edit_hint')}
             </p>
           )}
-          {/* Connect-manager toolbar — editor/owner, org tab only */}
+          {/* Connect toolbar — editor/owner, matrix tab only */}
           {canEdit && tab === 'matrix' && (!coarsePointer || touchEdit) && (
-            <button
-              onClick={toggleConnectMode}
-              className={`absolute top-3 right-3 z-10 inline-flex min-h-[44px] items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium shadow-md transition-colors ${
-                connectMode === 'manager'
-                  ? 'border-brand-500 bg-brand-50 text-brand-700 dark:border-brand-400 dark:bg-brand-900/30 dark:text-brand-200'
-                  : 'border-ink-200 bg-white text-ink-600 hover:bg-ink-100 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:bg-ink-800'
-              }`}
-              aria-label={t('schema.connect_manager')}
-              aria-pressed={connectMode === 'manager'}
-            >
-              <Link2 className="h-4 w-4" />
-              <span className="hidden sm:inline">{t('schema.connect_manager')}</span>
-            </button>
+            <div className="absolute top-3 right-3 z-10 flex flex-col gap-2">
+              <button
+                onClick={toggleConnectMode}
+                className={`inline-flex min-h-[44px] items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium shadow-md transition-colors ${
+                  connectMode === 'manager'
+                    ? 'border-brand-500 bg-brand-50 text-brand-700 dark:border-brand-400 dark:bg-brand-900/30 dark:text-brand-200'
+                    : 'border-ink-200 bg-white text-ink-600 hover:bg-ink-100 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:bg-ink-800'
+                }`}
+                aria-label={t('schema.connect_manager')}
+                aria-pressed={connectMode === 'manager'}
+              >
+                <Link2 className="h-4 w-4" />
+                <span className="hidden sm:inline">{t('schema.connect_manager')}</span>
+              </button>
+              <button
+                onClick={togglePmMode}
+                className={`inline-flex min-h-[44px] items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium shadow-md transition-colors ${
+                  connectMode === 'pm'
+                    ? 'border-warning-500 bg-warning-50 text-warning-700 dark:border-warning-400 dark:bg-warning-900/30 dark:text-warning-200'
+                    : 'border-ink-200 bg-white text-ink-600 hover:bg-ink-100 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:bg-ink-800'
+                }`}
+                aria-label={t('schema.connect_pm')}
+                aria-pressed={connectMode === 'pm'}
+              >
+                <Link2 className="h-4 w-4" />
+                <span className="hidden sm:inline">{t('schema.connect_pm')}</span>
+              </button>
+            </div>
           )}
           {connectMode === 'manager' && canEdit && tab === 'matrix' && (
-            <p className="pointer-events-none absolute top-16 right-3 z-10 max-w-[220px] rounded-md bg-ink-900/80 px-2 py-1 text-xs text-white dark:bg-ink-700/80">
+            <p className="pointer-events-none absolute top-28 right-3 z-10 max-w-[220px] rounded-md bg-ink-900/80 px-2 py-1 text-xs text-white dark:bg-ink-700/80">
               {t('schema.connect_manager_on')}
             </p>
           )}
-          {/* Disconnect button when a manager edge is selected */}
+          {connectMode === 'pm' && canEdit && tab === 'matrix' && (
+            <p className="pointer-events-none absolute top-28 right-3 z-10 max-w-[220px] rounded-md bg-ink-900/80 px-2 py-1 text-xs text-white dark:bg-ink-700/80">
+              {t('schema.connect_pm_on')}
+            </p>
+          )}
+          {/* Disconnect button when an edge is selected */}
           {canEdit && tab === 'matrix' && selectedEdgeId && (
             <button
-              onClick={handleDisconnectManager}
+              onClick={handleDisconnectEdge}
               className="absolute bottom-4 right-4 z-10 inline-flex min-h-[44px] items-center gap-2 rounded-lg border border-danger-300 bg-white px-3 py-2 text-sm font-medium text-danger-600 shadow-md transition-colors hover:bg-danger-50 dark:border-danger-700 dark:bg-ink-900 dark:text-danger-400 dark:hover:bg-ink-800"
             >
               <Unlink className="h-4 w-4" />
-              <span>{t('schema.disconnect_manager')}</span>
+              <span>{(() => {
+                const edge = edges.find((e) => e.id === selectedEdgeId);
+                return edge && edge.targetHandle === 'pm-handle' ? t('schema.disconnect_pm') : t('schema.disconnect_manager');
+              })()}</span>
             </button>
           )}
           {/* Minimap toggle button — hidden on small screens where minimap is off by default */}

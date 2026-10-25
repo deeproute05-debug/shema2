@@ -22,6 +22,8 @@ export function EmpNodeFactory(
   connectMode: ConnectMode,
   pendingConnectSource: string | null,
   onConnectTarget?: (targetId: string, kind: 'manager' | 'pm') => void,
+  onSetConnectSource?: (id: string) => void,
+  coarsePointer?: boolean,
 ) {
   const Component = memo(({ data, selected }: NodeProps) => {
     const { t } = useTranslation();
@@ -33,14 +35,19 @@ export function EmpNodeFactory(
     const isHighlighted = highlightIds !== null && highlightIds.has(emp.id);
     const subCount = employees.filter((e) => e.manager_id === emp.id).length;
     const isConnectSource = pendingConnectSource === emp.id;
-    const showHandles = connectable && connectMode !== 'none';
+    const showHandles = connectable && connectMode !== 'none' && connectMode !== 'dept';
+    // On coarse pointers in connect mode the whole card is the tap target;
+    // the visible handle dots are only visual affordances, sized for a
+    // comfortable touch hit area.
     const handleStyle = showHandles
-      ? { opacity: 1, background: '#2563eb', border: '2px solid white', width: '10px', height: '10px' }
+      ? { opacity: 1, background: '#2563eb', border: '2px solid white', width: '14px', height: '14px' }
       : { opacity: 0 };
     const pmHandleStyle = showHandles && connectMode === 'pm'
-      ? { opacity: 1, background: '#d97706', border: '2px solid white', width: '10px', height: '10px' }
+      ? { opacity: 1, background: '#d97706', border: '2px solid white', width: '14px', height: '14px' }
       : { opacity: 0 };
-    const isPendingTarget = pendingConnectSource !== null && pendingConnectSource !== emp.id;
+    const isConnectMode = showHandles && (connectMode === 'manager' || connectMode === 'pm');
+    const hasPendingSource = pendingConnectSource !== null;
+    const isPendingTarget = hasPendingSource && pendingConnectSource !== emp.id;
 
     return (
       <div
@@ -48,14 +55,30 @@ export function EmpNodeFactory(
           selected ? 'border-brand-500 ring-2 ring-brand-200' : 'border-ink-300 dark:border-ink-700'
         } ${dimmed ? 'opacity-30' : ''} ${isHighlighted ? 'ring-2 ring-warning-400' : ''} ${
           isConnectSource ? 'ring-2 ring-brand-400 border-brand-400' : ''
-        } ${isPendingTarget && showHandles ? 'cursor-pointer hover:border-brand-400 hover:ring-1 hover:ring-brand-200' : ''}`}
+        } ${isPendingTarget && showHandles ? 'cursor-pointer hover:border-brand-400 hover:ring-1 hover:ring-brand-200' : ''} ${
+          isConnectMode && !hasPendingSource ? 'cursor-pointer hover:border-brand-300 hover:ring-1 hover:ring-brand-200' : ''
+        }`}
         style={{ width: 200, cursor: 'pointer' }}
         onClick={(e) => {
           e.stopPropagation();
-          if (isPendingTarget && showHandles && connectMode !== 'dept' && onConnectTarget) {
-            onConnectTarget(emp.id, connectMode === 'pm' ? 'pm' : 'manager');
-          } else {
+          if (!isConnectMode) {
             onSelect(emp.id);
+            return;
+          }
+          // Connect mode (manager or pm) — tap flow.
+          if (!hasPendingSource) {
+            // First tap: mark as source (the manager / project manager).
+            if (onSetConnectSource) onSetConnectSource(emp.id);
+            return;
+          }
+          if (isConnectSource) {
+            // Tapping the same card again cancels the pending selection.
+            if (onSetConnectSource) onSetConnectSource(emp.id);
+            return;
+          }
+          // Second tap on a different card: call the existing target path.
+          if (onConnectTarget) {
+            onConnectTarget(emp.id, connectMode === 'pm' ? 'pm' : 'manager');
           }
         }}
         dir="ltr"

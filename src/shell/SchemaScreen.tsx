@@ -547,6 +547,17 @@ function SchemaScreenInner() {
     setSelectedEdgeId(null);
   }, []);
 
+  const handleSetConnectSource = useCallback((id: string) => {
+    setPendingConnectSource((prev) => prev === id ? null : id);
+  }, []);
+
+  const pendingSourceName = useMemo(() => {
+    if (!pendingConnectSource || !structure) return null;
+    const emp = structure.emps.find((e) => e.id === pendingConnectSource);
+    if (!emp) return null;
+    return emp.is_vacancy ? t('employees.vacancy_label') : emp.full_name;
+  }, [pendingConnectSource, structure, t]);
+
   const nodeTypes = useMemo(() => {
     if (!structure) return undefined;
     return {
@@ -557,12 +568,15 @@ function SchemaScreenInner() {
         connectMode,
         pendingConnectSource,
         handleConnectTarget,
+        handleSetConnectSource,
+        coarsePointer,
       ),
       freeNode: FreeNodeFactory(structure.freeNodes),
     };
   }, [
     structure, handleSelectDept, handleSelectEmp, toggleCollapse, collapsed, highlightIds,
     canEdit, tab, connectMode, coarsePointer, touchEdit, pendingConnectSource, handleConnectTarget,
+    handleSetConnectSource,
   ]);
 
   const handleResetLayout = useCallback(async () => {
@@ -694,6 +708,7 @@ function SchemaScreenInner() {
             selectionOnDrag={false}
             panOnScroll={false}
             zoomOnPinch
+            nodeDragThreshold={coarsePointer ? 8 : undefined}
             preventScrolling
           >
             <Background gap={16} size={1} />
@@ -752,7 +767,7 @@ function SchemaScreenInner() {
                 aria-pressed={connectMode === 'manager'}
               >
                 <Link2 className="h-4 w-4" />
-                <span className="hidden sm:inline">{t('schema.connect_manager')}</span>
+                <span>{t('schema.connect_manager_short')}</span>
               </button>
               <button
                 onClick={togglePmMode}
@@ -765,18 +780,22 @@ function SchemaScreenInner() {
                 aria-pressed={connectMode === 'pm'}
               >
                 <Link2 className="h-4 w-4" />
-                <span className="hidden sm:inline">{t('schema.connect_pm')}</span>
+                <span>{t('schema.connect_pm_short')}</span>
               </button>
             </div>
           )}
           {connectMode === 'manager' && canEdit && tab === 'matrix' && (
             <p className="pointer-events-none absolute top-28 right-3 z-10 max-w-[220px] rounded-md bg-ink-900/80 px-2 py-1 text-xs text-white dark:bg-ink-700/80">
-              {t('schema.connect_manager_on')}
+              {pendingSourceName
+                ? t('schema.connect_source_selected', { name: pendingSourceName })
+                : t('schema.connect_manager_on')}
             </p>
           )}
           {connectMode === 'pm' && canEdit && tab === 'matrix' && (
             <p className="pointer-events-none absolute top-28 right-3 z-10 max-w-[220px] rounded-md bg-ink-900/80 px-2 py-1 text-xs text-white dark:bg-ink-700/80">
-              {t('schema.connect_pm_on')}
+              {pendingSourceName
+                ? t('schema.connect_source_selected', { name: pendingSourceName })
+                : t('schema.connect_pm_on')}
             </p>
           )}
           {/* Disconnect button when an edge is selected */}

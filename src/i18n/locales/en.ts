@@ -225,6 +225,13 @@ export const en = {
     position_saved: 'Position saved.',
     show_minimap: 'Show minimap',
     hide_minimap: 'Hide minimap',
+    connect_manager: 'Connect manager',
+    connect_manager_on: 'Connecting: drag from a card to its manager',
+    connect_manager_off: 'Connect manager',
+    disconnect_manager: 'Disconnect manager',
+    manager_set: 'Manager set.',
+    manager_disconnected: 'Manager disconnected.',
+    select_edge_to_disconnect: 'Select a manager line, then click "Disconnect manager" to remove it.',
   },
   templates: {
     small_business: 'Small business',

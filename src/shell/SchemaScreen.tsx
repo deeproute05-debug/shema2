@@ -5,13 +5,13 @@ import {
   useNodesState, useEdgesState, useReactFlow, type Node, type Edge, type NodeChange,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Loader as Loader2, Search, Workflow, Table, Network, Boxes, Sparkles, FileText, RotateCcw, Map as MapIcon, Lock, Pencil } from 'lucide-react';
+import { Loader as Loader2, Search, Workflow, Table, Network, Boxes, Sparkles, FileText, RotateCcw, Map as MapIcon, Lock, Pencil, Link2, Unlink } from 'lucide-react';
 import { supabase, type Department, type Employee, type FreeNode, type FreeEdge, type NodePosition, type PositionView } from '@/core/supabase';
 import { extractDbError } from '@/core/dbErrors';
 import { toastError, toastSuccess, toastInfo } from '@/core/toast';
-import { layoutOrgChart, layoutMatrix, buildPositionMap, type PositionMap } from '@/schema/layout';
+import { layoutOrgChart, layoutMatrix, buildPositionMap, detectManagerCycle, type PositionMap } from '@/schema/layout';
 import { DeptNodeFactory } from '@/schema/DeptNode';
-import { EmpNodeFactory } from '@/schema/EmpNode';
+import { EmpNodeFactory, type ConnectMode } from '@/schema/EmpNode';
 import { SidePanel } from '@/schema/SidePanel';
 import { TEMPLATES } from '@/schema/templates';
 import { useCanEdit } from '@/core/useCanEdit';
@@ -61,6 +61,9 @@ function SchemaScreenInner() {
     return false;
   });
   const [touchEdit, setTouchEdit] = useState(false);
+  const [connectMode, setConnectMode] = useState<ConnectMode>('none');
+  const [pendingConnectSource, setPendingConnectSource] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -152,7 +155,13 @@ function SchemaScreenInner() {
     if (!structure) return undefined;
     return {
       deptNode: DeptNodeFactory(structure.depts, structure.emps, handleSelectDept, toggleCollapse, collapsed, highlightIds),
-      empNode: EmpNodeFactory(structure.emps, structure.depts, handleSelectEmp, highlightIds, false, 'none', null),
+      empNode: EmpNodeFactory(
+        structure.emps, structure.depts, handleSelectEmp, highlightIds,
+        canEdit && tab === 'org' && connectMode === 'manager' && (!coarsePointer || touchEdit),
+        connectMode,
+        pendingConnectSource,
+        handleConnectTarget,
+      ),
       freeNode: FreeNodeFactory(structure.freeNodes),
     };
   }, [structure, handleSelectDept, handleSelectEmp, toggleCollapse, collapsed, highlightIds]);
@@ -192,6 +201,9 @@ function SchemaScreenInner() {
   useEffect(() => {
     userInteractedRef.current = false;
     setTouchEdit(false);
+    setConnectMode('none');
+    setPendingConnectSource(null);
+    setSelectedEdgeId(null);
   }, [tab]);
 
   // Fit view only when fitViewSignal changes (first load or tab switch) and
@@ -263,6 +275,83 @@ function SchemaScreenInner() {
 
   const handleMove = useCallback((event: MouseEvent | TouchEvent | null) => {
     if (event !== null) userInteractedRef.current = true;
+  }, []);
+
+  const setManager = useCallback(async (empId: string, newManagerId: string | null) => {
+    if (!structure) return;
+    const emp = structure.emps.find((e) => e.id === empId);
+    if (!emp) return;
+
+    if (newManagerId !== null) {
+      if (newManagerId === empId) {
+        toastError(t('errors.self_manager'));
+        return;
+      }
+      if (detectManagerCycle(structure.emps, empId, newManagerId)) {
+        toastError(t('errors.cycle_detected'));
+        return;
+      }
+    }
+
+    const prevEmps = structure.emps;
+    setStructure((prev) => prev ? {
+      ...prev,
+      emps: prev.emps.map((e) => e.id === empId ? { ...e, manager_id: newManagerId } : e),
+    } : prev);
+
+    const { error } = await supabase
+      .from('employees')
+      .update({ manager_id: newManagerId })
+      .eq('id', empId);
+
+    if (error) {
+      setStructure((prev) => prev ? { ...prev, emps: prevEmps } : prev);
+      toastError(t(extractDbError(error)));
+      return;
+    }
+
+    toastSuccess(t(newManagerId === null ? 'schema.manager_disconnected' : 'schema.manager_set'));
+  }, [structure, t]);
+
+  const handleConnect = useCallback((connection: { source: string | null; target: string | null }) => {
+    if (!connection.source || !connection.target) return;
+    const sourceEmpId = connection.source.replace(/^emp:/, '');
+    const targetEmpId = connection.target.replace(/^emp:/, '');
+    void setManager(targetEmpId, sourceEmpId);
+    setPendingConnectSource(null);
+  }, [setManager]);
+
+  const handleConnectTarget = useCallback((targetId: string, _kind: 'manager' | 'pm') => {
+    if (!pendingConnectSource || pendingConnectSource === targetId) {
+      setPendingConnectSource(null);
+      return;
+    }
+    void setManager(targetId, pendingConnectSource);
+    setPendingConnectSource(null);
+  }, [pendingConnectSource, setManager]);
+
+  const handleEdgeClick = useCallback((_: React.MouseEvent, edge: Edge) => {
+    if (edge.id.startsWith('mgr:')) {
+      setSelectedEdgeId(edge.id);
+      setSelectedEmpId(null);
+      setSelectedDeptId(null);
+      setPanelOpen(false);
+    } else {
+      setSelectedEdgeId(null);
+    }
+  }, []);
+
+  const handleDisconnectManager = useCallback(() => {
+    if (!selectedEdgeId) return;
+    const empId = selectedEdgeId.replace(/^mgr:[^-]+-/, '');
+    void setManager(empId, null);
+    setSelectedEdgeId(null);
+  }, [selectedEdgeId, setManager]);
+
+  const toggleConnectMode = useCallback(() => {
+    setConnectMode((prev) => prev === 'manager' ? 'none' : 'manager');
+    setPendingConnectSource(null);
+    setSelectedEdgeId(null);
   }, []);
 
   const handleResetLayout = useCallback(async () => {
@@ -382,8 +471,10 @@ function SchemaScreenInner() {
             fitView={false}
             minZoom={0.05}
             maxZoom={2}
-            nodesDraggable={canEdit && tab !== 'free' && (!coarsePointer || touchEdit)}
-            nodesConnectable={false}
+            nodesDraggable={canEdit && tab !== 'free' && (!coarsePointer || touchEdit) && connectMode === 'none'}
+            nodesConnectable={canEdit && tab === 'org' && connectMode === 'manager' && (!coarsePointer || touchEdit)}
+            onConnect={handleConnect}
+            onEdgeClick={handleEdgeClick}
             elementsSelectable
             proOptions={{ hideAttribution: true }}
             panOnDrag
@@ -433,6 +524,37 @@ function SchemaScreenInner() {
             <p className="pointer-events-none absolute top-16 left-3 z-10 rounded-md bg-ink-900/80 px-2 py-1 text-xs text-white dark:bg-ink-700/80">
               {t('schema.touch_edit_hint')}
             </p>
+          )}
+          {/* Connect-manager toolbar — editor/owner, org tab only */}
+          {canEdit && tab === 'org' && (!coarsePointer || touchEdit) && (
+            <button
+              onClick={toggleConnectMode}
+              className={`absolute top-3 right-3 z-10 inline-flex min-h-[44px] items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium shadow-md transition-colors ${
+                connectMode === 'manager'
+                  ? 'border-brand-500 bg-brand-50 text-brand-700 dark:border-brand-400 dark:bg-brand-900/30 dark:text-brand-200'
+                  : 'border-ink-200 bg-white text-ink-600 hover:bg-ink-100 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:bg-ink-800'
+              }`}
+              aria-label={t('schema.connect_manager')}
+              aria-pressed={connectMode === 'manager'}
+            >
+              <Link2 className="h-4 w-4" />
+              <span className="hidden sm:inline">{t('schema.connect_manager')}</span>
+            </button>
+          )}
+          {connectMode === 'manager' && canEdit && tab === 'org' && (
+            <p className="pointer-events-none absolute top-16 right-3 z-10 max-w-[220px] rounded-md bg-ink-900/80 px-2 py-1 text-xs text-white dark:bg-ink-700/80">
+              {t('schema.connect_manager_on')}
+            </p>
+          )}
+          {/* Disconnect button when a manager edge is selected */}
+          {canEdit && tab === 'org' && selectedEdgeId && (
+            <button
+              onClick={handleDisconnectManager}
+              className="absolute bottom-4 right-4 z-10 inline-flex min-h-[44px] items-center gap-2 rounded-lg border border-danger-300 bg-white px-3 py-2 text-sm font-medium text-danger-600 shadow-md transition-colors hover:bg-danger-50 dark:border-danger-700 dark:bg-ink-900 dark:text-danger-400 dark:hover:bg-ink-800"
+            >
+              <Unlink className="h-4 w-4" />
+              <span>{t('schema.disconnect_manager')}</span>
+            </button>
           )}
           {/* Minimap toggle button — hidden on small screens where minimap is off by default */}
           <button

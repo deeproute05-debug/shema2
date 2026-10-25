@@ -232,6 +232,13 @@ export const ru = {
     position_saved: 'Позиция сохранена.',
     show_minimap: 'Показать мини-карту',
     hide_minimap: 'Скрыть мини-карту',
+    connect_manager: 'Назначить руководителя',
+    connect_manager_on: 'Подключение: перетащите от карточки к руководителю',
+    connect_manager_off: 'Назначить руководителя',
+    disconnect_manager: 'Отвязать руководителя',
+    manager_set: 'Руководитель назначен.',
+    manager_disconnected: 'Руководитель отвязан.',
+    select_edge_to_disconnect: 'Выберите линию подчинения, затем нажмите «Отвязать руководителя».',
   },
   templates: {
     small_business: 'Малый бизнес',

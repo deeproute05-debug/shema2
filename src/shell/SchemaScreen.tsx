@@ -151,20 +151,6 @@ function SchemaScreenInner() {
     });
   }, []);
 
-  const nodeTypes = useMemo(() => {
-    if (!structure) return undefined;
-    return {
-      deptNode: DeptNodeFactory(structure.depts, structure.emps, handleSelectDept, toggleCollapse, collapsed, highlightIds),
-      empNode: EmpNodeFactory(
-        structure.emps, structure.depts, handleSelectEmp, highlightIds,
-        canEdit && tab === 'org' && connectMode === 'manager' && (!coarsePointer || touchEdit),
-        connectMode,
-        pendingConnectSource,
-        handleConnectTarget,
-      ),
-      freeNode: FreeNodeFactory(structure.freeNodes),
-    };
-  }, [structure, handleSelectDept, handleSelectEmp, toggleCollapse, collapsed, highlightIds]);
 
   // Layout effect — re-runs only when structure (depts/emps/freeNodes/freeEdges),
   // tab, or collapsed changes.  Position-only updates do NOT retrigger this
@@ -299,14 +285,21 @@ function SchemaScreenInner() {
       emps: prev.emps.map((e) => e.id === empId ? { ...e, manager_id: newManagerId } : e),
     } : prev);
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('employees')
       .update({ manager_id: newManagerId })
-      .eq('id', empId);
+      .eq('id', empId)
+      .select('id');
 
     if (error) {
       setStructure((prev) => prev ? { ...prev, emps: prevEmps } : prev);
       toastError(t(extractDbError(error)));
+      return;
+    }
+    if (!data || data.length === 0) {
+      // RLS filters rows silently (no error): nothing was written.
+      setStructure((prev) => prev ? { ...prev, emps: prevEmps } : prev);
+      toastError(t('errors.permission_denied'));
       return;
     }
 
@@ -343,16 +336,39 @@ function SchemaScreenInner() {
 
   const handleDisconnectManager = useCallback(() => {
     if (!selectedEdgeId) return;
-    const empId = selectedEdgeId.replace(/^mgr:[^-]+-/, '');
-    void setManager(empId, null);
+    const edge = edges.find((e) => e.id === selectedEdgeId);
+    if (!edge) {
+      setSelectedEdgeId(null);
+      toastError(t('common.unknown_error'));
+      return;
+    }
+    void setManager(edge.target.replace(/^emp:/, ''), null);
     setSelectedEdgeId(null);
-  }, [selectedEdgeId, setManager]);
+  }, [selectedEdgeId, edges, setManager, t]);
 
   const toggleConnectMode = useCallback(() => {
     setConnectMode((prev) => prev === 'manager' ? 'none' : 'manager');
     setPendingConnectSource(null);
     setSelectedEdgeId(null);
   }, []);
+
+  const nodeTypes = useMemo(() => {
+    if (!structure) return undefined;
+    return {
+      deptNode: DeptNodeFactory(structure.depts, structure.emps, handleSelectDept, toggleCollapse, collapsed, highlightIds),
+      empNode: EmpNodeFactory(
+        structure.emps, structure.depts, handleSelectEmp, highlightIds,
+        canEdit && tab === 'org' && connectMode === 'manager' && (!coarsePointer || touchEdit),
+        connectMode,
+        pendingConnectSource,
+        handleConnectTarget,
+      ),
+      freeNode: FreeNodeFactory(structure.freeNodes),
+    };
+  }, [
+    structure, handleSelectDept, handleSelectEmp, toggleCollapse, collapsed, highlightIds,
+    canEdit, tab, connectMode, coarsePointer, touchEdit, pendingConnectSource, handleConnectTarget,
+  ]);
 
   const handleResetLayout = useCallback(async () => {
     if (!currentView) return;

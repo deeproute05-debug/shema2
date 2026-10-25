@@ -343,10 +343,15 @@ function SchemaScreenInner() {
   const moveEmpDept = useCallback(async (empId: string, newDeptId: string) => {
     if (!structure) return;
     const prevEmps = structure.emps;
+    const prevPositions = positions;
+    // Update structure AND drop the stale saved position in the same batch, so the
+    // layout effect (which reads the position map on the structure change) re-seats
+    // the card under its new department immediately.
     setStructure((prev) => prev ? {
       ...prev,
       emps: prev.emps.map((e) => e.id === empId ? { ...e, department_id: newDeptId } : e),
     } : prev);
+    setPositions((prev) => prev.filter((p) => !(p.view === 'org' && p.entity_type === 'employee' && p.entity_id === empId)));
     const { data, error } = await supabase
       .from('employees')
       .update({ department_id: newDeptId })
@@ -354,11 +359,13 @@ function SchemaScreenInner() {
       .select('id');
     if (error) {
       setStructure((prev) => prev ? { ...prev, emps: prevEmps } : prev);
+      setPositions(prevPositions);
       toastError(t(extractDbError(error)));
       return;
     }
     if (!data || data.length === 0) {
       setStructure((prev) => prev ? { ...prev, emps: prevEmps } : prev);
+      setPositions(prevPositions);
       toastError(t('errors.permission_denied'));
       return;
     }
@@ -373,9 +380,8 @@ function SchemaScreenInner() {
     if (delError) {
       toastError(t(extractDbError(delError)));
     }
-    setPositions((prev) => prev.filter((p) => !(p.view === 'org' && p.entity_type === 'employee' && p.entity_id === empId)));
     toastSuccess(t('schema.emp_moved'));
-  }, [structure, t]);
+  }, [structure, positions, t]);
 
   const confirmMove = useCallback(() => {
     if (!moveTarget) return;

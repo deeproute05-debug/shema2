@@ -5,7 +5,7 @@ import {
   useNodesState, useEdgesState, useReactFlow, type Node, type Edge, type NodeChange,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Loader as Loader2, Search, Workflow, Table, Network, Boxes, Sparkles, FileText, RotateCcw, Map as MapIcon, Lock, Pencil, Link2, Unlink } from 'lucide-react';
+import { Loader as Loader2, Search, Workflow, Table, Network, Boxes, Sparkles, FileText, RotateCcw, Map as MapIcon, Lock, Pencil, Link2, Unlink, Plus } from 'lucide-react';
 import { supabase, type Department, type Employee, type FreeNode, type FreeEdge, type NodePosition, type PositionView } from '@/core/supabase';
 import { extractDbError } from '@/core/dbErrors';
 import { toastError, toastSuccess, toastInfo } from '@/core/toast';
@@ -16,6 +16,8 @@ import { SidePanel } from '@/schema/SidePanel';
 import { TEMPLATES } from '@/schema/templates';
 import { useCanEdit } from '@/core/useCanEdit';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { Modal } from '@/components/Modal';
+import { employeeSchema, type EmployeeInput } from '@/core/formsValidation';
 import type { SchemaTab } from '@/schema/types';
 
 interface StructureData {
@@ -86,6 +88,12 @@ function SchemaScreenInner() {
   const [pendingConnectSource, setPendingConnectSource] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [moveTarget, setMoveTarget] = useState<{ empId: string; empName: string; deptId: string; deptName: string; prevX: number; prevY: number } | null>(null);
+  const [addEmpOpen, setAddEmpOpen] = useState(false);
+  const [addEmpKind, setAddEmpKind] = useState<'subordinate' | 'colleague'>('subordinate');
+  const [addEmpSourceId, setAddEmpSourceId] = useState<string | null>(null);
+  const [addEmpForm, setAddEmpForm] = useState<EmployeeInput | null>(null);
+  const [addEmpFieldErrors, setAddEmpFieldErrors] = useState<Record<string, string>>({});
+  const [addEmpSaving, setAddEmpSaving] = useState(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -558,6 +566,84 @@ function SchemaScreenInner() {
     return emp.is_vacancy ? t('employees.vacancy_label') : emp.full_name;
   }, [pendingConnectSource, structure, t]);
 
+  const handleAddEmployee = useCallback((empId: string, kind: 'subordinate' | 'colleague') => {
+    if (!structure) return;
+    setAddEmpSourceId(empId);
+    setAddEmpKind(kind);
+    setAddEmpForm({
+      full_name: '',
+      position: '',
+      department_id: null,
+      duties: '',
+      responsibility_zone: '',
+      manager_id: null,
+      project_manager_id: null,
+      is_vacancy: false,
+    });
+    setAddEmpFieldErrors({});
+    setAddEmpOpen(true);
+  }, [structure]);
+
+  const saveAddEmployee = useCallback(async () => {
+    if (!addEmpForm || !addEmpSourceId || !structure) return;
+    const sourceEmp = structure.emps.find((e) => e.id === addEmpSourceId);
+    if (!sourceEmp) return;
+
+    const parsed = employeeSchema.safeParse(addEmpForm);
+    if (!parsed.success) {
+      const errs: Record<string, string> = {};
+      for (const issue of parsed.error.issues) {
+        errs[issue.path[0] as string] = issue.message;
+      }
+      setAddEmpFieldErrors(errs);
+      return;
+    }
+
+    setAddEmpSaving(true);
+    const base = parsed.data;
+    const insertData = {
+      ...base,
+      // Subordinate: manager = clicked employee, dept = clicked employee's dept.
+      // Colleague: same dept and same manager as the clicked employee.
+      department_id: sourceEmp.department_id,
+      manager_id: addEmpKind === 'subordinate' ? addEmpSourceId : sourceEmp.manager_id,
+      project_manager_id: null,
+    };
+
+    const { data, error } = await supabase
+      .from('employees')
+      .insert(insertData)
+      .select()
+      .single();
+
+    if (error) {
+      toastError(t(extractDbError(error)));
+      setAddEmpSaving(false);
+      return;
+    }
+    if (!data) {
+      toastError(t('errors.permission_denied'));
+      setAddEmpSaving(false);
+      return;
+    }
+
+    setStructure((prev) => prev ? { ...prev, emps: [...prev.emps, data as Employee] } : prev);
+    toastSuccess(t('employees.created'));
+    setAddEmpOpen(false);
+    setAddEmpForm(null);
+    setAddEmpFieldErrors({});
+    setAddEmpSaving(false);
+    setAddEmpSourceId(null);
+  }, [addEmpForm, addEmpSourceId, addEmpKind, structure, t]);
+
+  const cancelAddEmployee = useCallback(() => {
+    setAddEmpOpen(false);
+    setAddEmpForm(null);
+    setAddEmpFieldErrors({});
+    setAddEmpSaving(false);
+    setAddEmpSourceId(null);
+  }, []);
+
   const nodeTypes = useMemo(() => {
     if (!structure) return undefined;
     return {
@@ -570,13 +656,15 @@ function SchemaScreenInner() {
         handleConnectTarget,
         handleSetConnectSource,
         coarsePointer,
+        handleAddEmployee,
+        canEdit && (tab === 'org' || tab === 'matrix') && connectMode === 'none' && (!coarsePointer || touchEdit),
       ),
       freeNode: FreeNodeFactory(structure.freeNodes),
     };
   }, [
     structure, handleSelectDept, handleSelectEmp, toggleCollapse, collapsed, highlightIds,
     canEdit, tab, connectMode, coarsePointer, touchEdit, pendingConnectSource, handleConnectTarget,
-    handleSetConnectSource,
+    handleSetConnectSource, handleAddEmployee,
   ]);
 
   const handleResetLayout = useCallback(async () => {
@@ -886,6 +974,85 @@ function SchemaScreenInner() {
         onConfirm={confirmMove}
         onCancel={cancelMove}
       />
+
+      <Modal
+        open={addEmpOpen}
+        title={t(addEmpKind === 'subordinate' ? 'schema.add_subordinate_title' : 'schema.add_colleague_title')}
+        onClose={cancelAddEmployee}
+        footer={
+          <>
+            <button onClick={cancelAddEmployee} className="btn-secondary" disabled={addEmpSaving}>
+              {t('common.cancel')}
+            </button>
+            <button onClick={() => void saveAddEmployee()} className="btn-primary" disabled={addEmpSaving}>
+              {addEmpSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              {t('common.save')}
+            </button>
+          </>
+        }
+      >
+        {addEmpForm && (
+          <div className="space-y-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                className="h-5 w-5 rounded border-ink-300 text-brand-600 focus:ring-brand-500"
+                checked={addEmpForm.is_vacancy}
+                onChange={(e) => setAddEmpForm({ ...addEmpForm, is_vacancy: e.target.checked })}
+                disabled={addEmpSaving}
+              />
+              <span className="text-sm font-medium">{t('employees.is_vacancy')}</span>
+            </label>
+
+            {!addEmpForm.is_vacancy && (
+              <div className="space-y-1.5">
+                <label className="label" htmlFor="add-emp-name">{t('employees.full_name')}</label>
+                <input
+                  id="add-emp-name"
+                  className="input"
+                  value={addEmpForm.full_name}
+                  onChange={(e) => setAddEmpForm({ ...addEmpForm, full_name: e.target.value })}
+                  disabled={addEmpSaving}
+                />
+                {addEmpFieldErrors.full_name && <p className="text-sm text-danger-600">{t(addEmpFieldErrors.full_name)}</p>}
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="label" htmlFor="add-emp-position">{t('employees.position')}</label>
+              <input
+                id="add-emp-position"
+                className="input"
+                value={addEmpForm.position}
+                onChange={(e) => setAddEmpForm({ ...addEmpForm, position: e.target.value })}
+                disabled={addEmpSaving}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="label" htmlFor="add-emp-duties">{t('employees.duties')}</label>
+              <textarea
+                id="add-emp-duties"
+                className="input min-h-[60px]"
+                value={addEmpForm.duties}
+                onChange={(e) => setAddEmpForm({ ...addEmpForm, duties: e.target.value })}
+                disabled={addEmpSaving}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="label" htmlFor="add-emp-zone">{t('employees.responsibility_zone')}</label>
+              <textarea
+                id="add-emp-zone"
+                className="input min-h-[60px]"
+                value={addEmpForm.responsibility_zone}
+                onChange={(e) => setAddEmpForm({ ...addEmpForm, responsibility_zone: e.target.value })}
+                disabled={addEmpSaving}
+              />
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

@@ -254,6 +254,11 @@ export const ru = {
     move_emp_confirm: 'Переместить {{name}} в «{{department}}»?',
     move_emp_confirm_btn: 'Переместить',
     emp_moved: 'Сотрудник перемещён.',
+    add_employee: 'Добавить сотрудника',
+    add_subordinate: 'Добавить подчинённого',
+    add_colleague: 'Добавить коллегу',
+    add_subordinate_title: 'Добавить подчинённого',
+    add_colleague_title: 'Добавить коллегу',
   },
   templates: {
     small_business: 'Малый бизнес',

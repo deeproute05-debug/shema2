@@ -247,6 +247,11 @@ export const en = {
     move_emp_confirm: 'Move {{name}} to {{department}}?',
     move_emp_confirm_btn: 'Move',
     emp_moved: 'Employee moved.',
+    add_employee: 'Add employee',
+    add_subordinate: 'Add subordinate',
+    add_colleague: 'Add colleague',
+    add_subordinate_title: 'Add subordinate',
+    add_colleague_title: 'Add colleague',
   },
   templates: {
     small_business: 'Small business',

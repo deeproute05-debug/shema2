@@ -1,7 +1,7 @@
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { useTranslation } from 'react-i18next';
-import { UserCircle, Briefcase, AlertTriangle } from 'lucide-react';
+import { UserCircle, Briefcase, AlertTriangle, Plus, UserPlus, Users } from 'lucide-react';
 import type { Employee, Department } from '@/core/supabase';
 import { getEmployeeProblems, type ProblemType } from './types';
 
@@ -24,6 +24,8 @@ export function EmpNodeFactory(
   onConnectTarget?: (targetId: string, kind: 'manager' | 'pm') => void,
   onSetConnectSource?: (id: string) => void,
   coarsePointer?: boolean,
+  onAddEmployee?: (empId: string, kind: 'subordinate' | 'colleague') => void,
+  showAddButton?: boolean,
 ) {
   const Component = memo(({ data, selected }: NodeProps) => {
     const { t } = useTranslation();
@@ -49,6 +51,8 @@ export function EmpNodeFactory(
     const isConnectMode = !!coarsePointer && showHandles && (connectMode === 'manager' || connectMode === 'pm');
     const hasPendingSource = pendingConnectSource !== null;
     const isPendingTarget = hasPendingSource && pendingConnectSource !== emp.id;
+    const canShowAdd = !!showAddButton && !!onAddEmployee && !isConnectMode && !showHandles;
+    const [addMenuOpen, setAddMenuOpen] = useState(false);
 
     return (
       <div
@@ -85,6 +89,57 @@ export function EmpNodeFactory(
         dir="ltr"
       >
         <Handle type="target" position={Position.Top} style={handleStyle} isConnectableStart={showHandles} isConnectableEnd={showHandles} />
+        {canShowAdd && (
+          <div className="absolute -top-3 -right-3 z-20 nodrag" data-nodrag>
+            <button
+              type="button"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border-2 border-brand-500 bg-white text-brand-600 shadow-md transition-colors hover:bg-brand-50 dark:border-brand-400 dark:bg-ink-900 dark:text-brand-300 dark:hover:bg-ink-800"
+              aria-label={t('schema.add_employee')}
+              aria-haspopup="menu"
+              aria-expanded={addMenuOpen}
+              onClick={(e) => {
+                e.stopPropagation();
+                setAddMenuOpen((v) => !v);
+              }}
+            >
+              <Plus className="h-5 w-5" />
+            </button>
+            {addMenuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 top-12 z-30 w-44 overflow-hidden rounded-lg border border-ink-200 bg-white py-1 shadow-lg dark:border-ink-700 dark:bg-ink-900"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-ink-700 hover:bg-ink-100 dark:text-ink-200 dark:hover:bg-ink-800"
+                  aria-label={t('schema.add_subordinate')}
+                  onClick={() => {
+                    setAddMenuOpen(false);
+                    onAddEmployee!(emp.id, 'subordinate');
+                  }}
+                >
+                  <UserPlus className="h-4 w-4 shrink-0 text-brand-500" />
+                  {t('schema.add_subordinate')}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-ink-700 hover:bg-ink-100 dark:text-ink-200 dark:hover:bg-ink-800"
+                  aria-label={t('schema.add_colleague')}
+                  onClick={() => {
+                    setAddMenuOpen(false);
+                    onAddEmployee!(emp.id, 'colleague');
+                  }}
+                >
+                  <Users className="h-4 w-4 shrink-0 text-brand-500" />
+                  {t('schema.add_colleague')}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         <div className="flex items-center gap-2">
           {emp.is_vacancy ? (
             <Briefcase className="h-5 w-5 shrink-0 text-warning-500" />

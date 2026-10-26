@@ -259,6 +259,9 @@ export const ru = {
     add_colleague: 'Добавить коллегу',
     add_subordinate_title: 'Добавить подчинённого',
     add_colleague_title: 'Добавить коллегу',
+    delete_employee: 'Удалить сотрудника',
+    delete_employee_title: 'Удалить сотрудника',
+    delete_employee_confirm: 'Удалить {{name}}? {{count}} сотрудник(ов) потеряют руководителя и/или проектного руководителя.',
   },
   templates: {
     small_business: 'Малый бизнес',

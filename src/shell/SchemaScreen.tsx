@@ -94,6 +94,8 @@ function SchemaScreenInner() {
   const [addEmpForm, setAddEmpForm] = useState<EmployeeInput | null>(null);
   const [addEmpFieldErrors, setAddEmpFieldErrors] = useState<Record<string, string>>({});
   const [addEmpSaving, setAddEmpSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; affectedCount: number } | null>(null);
+  const [deleteSaving, setDeleteSaving] = useState(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -646,6 +648,80 @@ function SchemaScreenInner() {
     setAddEmpSourceId(null);
   }, []);
 
+  const requestDelete = useCallback((kind: 'employee', id: string) => {
+    if (kind !== 'employee' || !structure) return;
+    const emp = structure.emps.find((e) => e.id === id);
+    if (!emp) return;
+    const name = emp.is_vacancy ? t('employees.vacancy_label') : emp.full_name;
+    // De-duplicated count of OTHER employees that would lose a manager and/or
+    // project manager when this employee is deleted.
+    const affected = new Set<string>();
+    for (const e of structure.emps) {
+      if (e.id === id) continue;
+      if (e.manager_id === id) affected.add(e.id);
+      if (e.project_manager_id === id) affected.add(e.id);
+    }
+    setDeleteTarget({ id, name, affectedCount: affected.size });
+  }, [structure, t]);
+
+  const confirmDelete = useCallback(async () => {
+    if (!deleteTarget || !structure) return;
+    setDeleteSaving(true);
+    const id = deleteTarget.id;
+    const prevEmps = structure.emps;
+    const prevPositions = positions;
+
+    // Optimistic: remove the employee, null manager_id / project_manager_id on
+    // dependents (mirrors ON DELETE SET NULL), and drop the deleted employee's
+    // local positions. Structure + positions rolled back together on error.
+    setStructure((prev) => prev ? {
+      ...prev,
+      emps: prev.emps
+        .filter((e) => e.id !== id)
+        .map((e) => (e.manager_id === id || e.project_manager_id === id)
+          ? {
+              ...e,
+              manager_id: e.manager_id === id ? null : e.manager_id,
+              project_manager_id: e.project_manager_id === id ? null : e.project_manager_id,
+            }
+          : e),
+    } : prev);
+    setPositions((prev) => prev.filter((p) => !(p.entity_type === 'employee' && p.entity_id === id)));
+
+    const { data, error } = await supabase
+      .from('employees')
+      .delete()
+      .eq('id', id)
+      .select('id');
+
+    if (error) {
+      setStructure((prev) => prev ? { ...prev, emps: prevEmps } : prev);
+      setPositions(prevPositions);
+      toastError(t(extractDbError(error)));
+      setDeleteSaving(false);
+      return;
+    }
+    if (!data || data.length === 0) {
+      setStructure((prev) => prev ? { ...prev, emps: prevEmps } : prev);
+      setPositions(prevPositions);
+      toastError(t('errors.permission_denied'));
+      setDeleteSaving(false);
+      return;
+    }
+
+    toastSuccess(t('employees.deleted'));
+    setDeleteTarget(null);
+    setDeleteSaving(false);
+    setSelectedEmpId(null);
+    setSelectedDeptId(null);
+    setPanelOpen(false);
+  }, [deleteTarget, structure, positions, t]);
+
+  const cancelDelete = useCallback(() => {
+    setDeleteTarget(null);
+    setDeleteSaving(false);
+  }, []);
+
   const nodeTypes = useMemo(() => {
     if (!structure) return undefined;
     return {
@@ -956,6 +1032,8 @@ function SchemaScreenInner() {
         employees={structure?.emps ?? []}
         onSelectEmp={handleSelectEmp}
         onSelectDept={handleSelectDept}
+        canEdit={canEdit}
+        onRequestDelete={requestDelete}
       />
 
       <ConfirmDialog
@@ -975,6 +1053,16 @@ function SchemaScreenInner() {
         confirmKind="primary"
         onConfirm={confirmMove}
         onCancel={cancelMove}
+      />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={t('schema.delete_employee_title')}
+        message={deleteTarget ? t('schema.delete_employee_confirm', { name: deleteTarget.name, count: deleteTarget.affectedCount }) : ''}
+        confirmLabel={t('common.delete')}
+        confirmKind="danger"
+        onConfirm={() => void confirmDelete()}
+        onCancel={cancelDelete}
       />
 
       <Modal

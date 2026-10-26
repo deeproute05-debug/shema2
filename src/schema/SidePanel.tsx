@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { X, UserCircle, Building2, AlertTriangle, ImageIcon, ArrowRight, Briefcase } from 'lucide-react';
+import { X, UserCircle, Building2, AlertTriangle, ImageIcon, ArrowRight, Briefcase, Trash2 } from 'lucide-react';
 import type { Department, Employee } from '@/core/supabase';
 import { getEmployeeProblems, type ProblemType } from './types';
 
@@ -18,10 +18,12 @@ interface Props {
   employees: Employee[];
   onSelectEmp: (id: string) => void;
   onSelectDept: (id: string) => void;
+  canEdit?: boolean;
+  onRequestDelete?: (kind: 'employee', id: string) => void;
 }
 
 export function SidePanel({
-  open, onClose, selectedDept, selectedEmp, depts, employees, onSelectEmp, onSelectDept,
+  open, onClose, selectedDept, selectedEmp, depts, employees, onSelectEmp, onSelectDept, canEdit, onRequestDelete,
 }: Props) {
   const { t } = useTranslation();
 
@@ -56,6 +58,8 @@ export function SidePanel({
           depts={depts}
           employees={employees}
           onSelectEmp={onSelectEmp}
+          canEdit={canEdit}
+          onRequestDelete={onRequestDelete}
         />
       )}
     </div>
@@ -164,12 +168,14 @@ function DeptDetails({
 }
 
 function EmpDetails({
-  emp, depts, employees, onSelectEmp,
+  emp, depts, employees, onSelectEmp, canEdit, onRequestDelete,
 }: {
   emp: Employee;
   depts: Department[];
   employees: Employee[];
   onSelectEmp: (id: string) => void;
+  canEdit?: boolean;
+  onRequestDelete?: (kind: 'employee', id: string) => void;
 }) {
   const { t } = useTranslation();
   const dept = depts.find((d) => d.id === emp.department_id);
@@ -269,6 +275,17 @@ function EmpDetails({
             ))}
           </div>
         </div>
+      )}
+
+      {canEdit && onRequestDelete && (
+        <button
+          onClick={() => onRequestDelete('employee', emp.id)}
+          className="btn mt-2 inline-flex min-h-[44px] w-full items-center justify-center gap-2 bg-danger-600 text-white hover:bg-danger-700"
+          aria-label={t('schema.delete_employee')}
+        >
+          <Trash2 className="h-4 w-4" />
+          {t('schema.delete_employee')}
+        </button>
       )}
     </div>
   );

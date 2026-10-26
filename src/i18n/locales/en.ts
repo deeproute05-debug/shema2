@@ -252,6 +252,9 @@ export const en = {
     add_colleague: 'Add colleague',
     add_subordinate_title: 'Add subordinate',
     add_colleague_title: 'Add colleague',
+    delete_employee: 'Delete employee',
+    delete_employee_title: 'Delete employee',
+    delete_employee_confirm: 'Delete {{name}}? {{count}} employee(s) will lose their manager and/or project manager.',
   },
   templates: {
     small_business: 'Small business',

@@ -96,6 +96,7 @@ function SchemaScreenInner() {
   const [addEmpSaving, setAddEmpSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; affectedCount: number } | null>(null);
   const [deleteSaving, setDeleteSaving] = useState(false);
+  const deleteBusyRef = useRef(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -665,7 +666,8 @@ function SchemaScreenInner() {
   }, [structure, t]);
 
   const confirmDelete = useCallback(async () => {
-    if (!deleteTarget || !structure) return;
+    if (!deleteTarget || !structure || deleteBusyRef.current) return;
+    deleteBusyRef.current = true; // guard against double tap on Confirm
     setDeleteSaving(true);
     const id = deleteTarget.id;
     const prevEmps = structure.emps;
@@ -699,6 +701,7 @@ function SchemaScreenInner() {
       setPositions(prevPositions);
       toastError(t(extractDbError(error)));
       setDeleteSaving(false);
+      deleteBusyRef.current = false;
       return;
     }
     if (!data || data.length === 0) {
@@ -706,12 +709,14 @@ function SchemaScreenInner() {
       setPositions(prevPositions);
       toastError(t('errors.permission_denied'));
       setDeleteSaving(false);
+      deleteBusyRef.current = false;
       return;
     }
 
     toastSuccess(t('employees.deleted'));
     setDeleteTarget(null);
     setDeleteSaving(false);
+    deleteBusyRef.current = false;
     setSelectedEmpId(null);
     setSelectedDeptId(null);
     setPanelOpen(false);
@@ -720,6 +725,7 @@ function SchemaScreenInner() {
   const cancelDelete = useCallback(() => {
     setDeleteTarget(null);
     setDeleteSaving(false);
+    deleteBusyRef.current = false;
   }, []);
 
   const nodeTypes = useMemo(() => {

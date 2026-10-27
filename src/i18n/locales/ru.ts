@@ -262,6 +262,10 @@ export const ru = {
     delete_employee: 'Удалить сотрудника',
     delete_employee_title: 'Удалить сотрудника',
     delete_employee_confirm: 'Удалить {{name}}? {{count}} сотрудник(ов) потеряют руководителя и/или проектного руководителя.',
+    delete_department: 'Удалить подразделение',
+    delete_department_title: 'Удалить подразделение',
+    delete_department_confirm: 'Удалить подразделение «{{name}}»?',
+    delete_dept_blocked: 'Сначала переместите {{employees}} сотрудник(ов) и {{sub_depts}} подраздел(ений).',
   },
   templates: {
     small_business: 'Малый бизнес',

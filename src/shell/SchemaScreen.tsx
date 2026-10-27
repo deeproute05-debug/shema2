@@ -94,7 +94,7 @@ function SchemaScreenInner() {
   const [addEmpForm, setAddEmpForm] = useState<EmployeeInput | null>(null);
   const [addEmpFieldErrors, setAddEmpFieldErrors] = useState<Record<string, string>>({});
   const [addEmpSaving, setAddEmpSaving] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; affectedCount: number } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ kind: 'employee' | 'department'; id: string; name: string; affectedCount: number } | null>(null);
   const [deleteSaving, setDeleteSaving] = useState(false);
   const deleteBusyRef = useRef(false);
 
@@ -649,55 +649,112 @@ function SchemaScreenInner() {
     setAddEmpSourceId(null);
   }, []);
 
-  const requestDelete = useCallback((kind: 'employee', id: string) => {
-    if (kind !== 'employee' || !structure) return;
-    const emp = structure.emps.find((e) => e.id === id);
-    if (!emp) return;
-    const name = emp.is_vacancy ? t('employees.vacancy_label') : emp.full_name;
-    // De-duplicated count of OTHER employees that would lose a manager and/or
-    // project manager when this employee is deleted.
-    const affected = new Set<string>();
-    for (const e of structure.emps) {
-      if (e.id === id) continue;
-      if (e.manager_id === id) affected.add(e.id);
-      if (e.project_manager_id === id) affected.add(e.id);
+  const requestDelete = useCallback((kind: 'employee' | 'department', id: string) => {
+    if (!structure) return;
+    if (kind === 'employee') {
+      const emp = structure.emps.find((e) => e.id === id);
+      if (!emp) return;
+      const name = emp.is_vacancy ? t('employees.vacancy_label') : emp.full_name;
+      // De-duplicated count of OTHER employees that would lose a manager and/or
+      // project manager when this employee is deleted.
+      const affected = new Set<string>();
+      for (const e of structure.emps) {
+        if (e.id === id) continue;
+        if (e.manager_id === id) affected.add(e.id);
+        if (e.project_manager_id === id) affected.add(e.id);
+      }
+      setDeleteTarget({ kind, id, name, affectedCount: affected.size });
+      return;
     }
-    setDeleteTarget({ id, name, affectedCount: affected.size });
+    // kind === 'department'
+    const dept = structure.depts.find((d) => d.id === id);
+    if (!dept) return;
+    const empCount = structure.emps.filter((e) => e.department_id === id).length;
+    const subDeptCount = structure.depts.filter((d) => d.parent_id === id).length;
+    if (empCount > 0 || subDeptCount > 0) {
+      // Do NOT call the DB and do NOT open the confirm dialog.
+      toastError(t('schema.delete_dept_blocked', { employees: empCount, sub_depts: subDeptCount }));
+      return;
+    }
+    setDeleteTarget({ kind, id, name: dept.name, affectedCount: 0 });
   }, [structure, t]);
 
   const confirmDelete = useCallback(async () => {
     if (!deleteTarget || !structure || deleteBusyRef.current) return;
     deleteBusyRef.current = true; // guard against double tap on Confirm
     setDeleteSaving(true);
+    const kind = deleteTarget.kind;
     const id = deleteTarget.id;
     const prevEmps = structure.emps;
+    const prevDepts = structure.depts;
     const prevPositions = positions;
 
-    // Optimistic: remove the employee, null manager_id / project_manager_id on
-    // dependents (mirrors ON DELETE SET NULL), and drop the deleted employee's
-    // local positions. Structure + positions rolled back together on error.
+    if (kind === 'employee') {
+      // Optimistic: remove the employee, null manager_id / project_manager_id on
+      // dependents (mirrors ON DELETE SET NULL), and drop the deleted employee's
+      // local positions. Structure + positions rolled back together on error.
+      setStructure((prev) => prev ? {
+        ...prev,
+        emps: prev.emps
+          .filter((e) => e.id !== id)
+          .map((e) => (e.manager_id === id || e.project_manager_id === id)
+            ? {
+                ...e,
+                manager_id: e.manager_id === id ? null : e.manager_id,
+                project_manager_id: e.project_manager_id === id ? null : e.project_manager_id,
+              }
+            : e),
+      } : prev);
+      setPositions((prev) => prev.filter((p) => !(p.entity_type === 'employee' && p.entity_id === id)));
+
+      const { data, error } = await supabase
+        .from('employees')
+        .delete()
+        .eq('id', id)
+        .select('id');
+
+      if (error) {
+        setStructure((prev) => prev ? { ...prev, emps: prevEmps } : prev);
+        setPositions(prevPositions);
+        toastError(t(extractDbError(error)));
+        setDeleteSaving(false);
+        deleteBusyRef.current = false;
+        return;
+      }
+      if (!data || data.length === 0) {
+        setStructure((prev) => prev ? { ...prev, emps: prevEmps } : prev);
+        setPositions(prevPositions);
+        toastError(t('errors.permission_denied'));
+        setDeleteSaving(false);
+        deleteBusyRef.current = false;
+        return;
+      }
+
+      toastSuccess(t('employees.deleted'));
+      setDeleteTarget(null);
+      setDeleteSaving(false);
+      deleteBusyRef.current = false;
+      setSelectedEmpId(null);
+      setSelectedDeptId(null);
+      setPanelOpen(false);
+      return;
+    }
+
+    // kind === 'department' (empty department only — requestDelete guards this)
     setStructure((prev) => prev ? {
       ...prev,
-      emps: prev.emps
-        .filter((e) => e.id !== id)
-        .map((e) => (e.manager_id === id || e.project_manager_id === id)
-          ? {
-              ...e,
-              manager_id: e.manager_id === id ? null : e.manager_id,
-              project_manager_id: e.project_manager_id === id ? null : e.project_manager_id,
-            }
-          : e),
+      depts: prev.depts.filter((d) => d.id !== id),
     } : prev);
-    setPositions((prev) => prev.filter((p) => !(p.entity_type === 'employee' && p.entity_id === id)));
+    setPositions((prev) => prev.filter((p) => !(p.entity_type === 'department' && p.entity_id === id)));
 
     const { data, error } = await supabase
-      .from('employees')
+      .from('departments')
       .delete()
       .eq('id', id)
       .select('id');
 
     if (error) {
-      setStructure((prev) => prev ? { ...prev, emps: prevEmps } : prev);
+      setStructure((prev) => prev ? { ...prev, depts: prevDepts } : prev);
       setPositions(prevPositions);
       toastError(t(extractDbError(error)));
       setDeleteSaving(false);
@@ -705,7 +762,7 @@ function SchemaScreenInner() {
       return;
     }
     if (!data || data.length === 0) {
-      setStructure((prev) => prev ? { ...prev, emps: prevEmps } : prev);
+      setStructure((prev) => prev ? { ...prev, depts: prevDepts } : prev);
       setPositions(prevPositions);
       toastError(t('errors.permission_denied'));
       setDeleteSaving(false);
@@ -713,12 +770,12 @@ function SchemaScreenInner() {
       return;
     }
 
-    toastSuccess(t('employees.deleted'));
+    toastSuccess(t('departments.deleted'));
     setDeleteTarget(null);
     setDeleteSaving(false);
     deleteBusyRef.current = false;
-    setSelectedEmpId(null);
     setSelectedDeptId(null);
+    setSelectedEmpId(null);
     setPanelOpen(false);
   }, [deleteTarget, structure, positions, t]);
 
@@ -1063,8 +1120,12 @@ function SchemaScreenInner() {
 
       <ConfirmDialog
         open={deleteTarget !== null}
-        title={t('schema.delete_employee_title')}
-        message={deleteTarget ? t('schema.delete_employee_confirm', { name: deleteTarget.name, count: deleteTarget.affectedCount }) : ''}
+        title={deleteTarget?.kind === 'department' ? t('schema.delete_department_title') : t('schema.delete_employee_title')}
+        message={deleteTarget
+          ? deleteTarget.kind === 'department'
+            ? t('schema.delete_department_confirm', { name: deleteTarget.name })
+            : t('schema.delete_employee_confirm', { name: deleteTarget.name, count: deleteTarget.affectedCount })
+          : ''}
         confirmLabel={t('common.delete')}
         confirmKind="danger"
         onConfirm={() => void confirmDelete()}

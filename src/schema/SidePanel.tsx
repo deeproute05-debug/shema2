@@ -19,7 +19,7 @@ interface Props {
   onSelectEmp: (id: string) => void;
   onSelectDept: (id: string) => void;
   canEdit?: boolean;
-  onRequestDelete?: (kind: 'employee', id: string) => void;
+  onRequestDelete?: (kind: 'employee' | 'department', id: string) => void;
 }
 
 export function SidePanel({
@@ -49,6 +49,8 @@ export function SidePanel({
           employees={employees}
           onSelectEmp={onSelectEmp}
           onSelectDept={onSelectDept}
+          canEdit={canEdit}
+          onRequestDelete={onRequestDelete}
         />
       )}
 
@@ -67,13 +69,15 @@ export function SidePanel({
 }
 
 function DeptDetails({
-  dept, depts, employees, onSelectEmp, onSelectDept,
+  dept, depts, employees, onSelectEmp, onSelectDept, canEdit, onRequestDelete,
 }: {
   dept: Department;
   depts: Department[];
   employees: Employee[];
   onSelectEmp: (id: string) => void;
   onSelectDept: (id: string) => void;
+  canEdit?: boolean;
+  onRequestDelete?: (kind: 'employee' | 'department', id: string) => void;
 }) {
   const { t } = useTranslation();
   const parent = depts.find((d) => d.id === dept.parent_id);
@@ -163,6 +167,17 @@ function DeptDetails({
           </div>
         </div>
       )}
+
+      {canEdit && onRequestDelete && (
+        <button
+          onClick={() => onRequestDelete('department', dept.id)}
+          className="btn mt-2 inline-flex min-h-[44px] w-full items-center justify-center gap-2 bg-danger-600 text-white hover:bg-danger-700"
+          aria-label={t('schema.delete_department')}
+        >
+          <Trash2 className="h-4 w-4" />
+          {t('schema.delete_department')}
+        </button>
+      )}
     </div>
   );
 }
@@ -175,7 +190,7 @@ function EmpDetails({
   employees: Employee[];
   onSelectEmp: (id: string) => void;
   canEdit?: boolean;
-  onRequestDelete?: (kind: 'employee', id: string) => void;
+  onRequestDelete?: (kind: 'employee' | 'department', id: string) => void;
 }) {
   const { t } = useTranslation();
   const dept = depts.find((d) => d.id === emp.department_id);

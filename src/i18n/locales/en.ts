@@ -255,6 +255,10 @@ export const en = {
     delete_employee: 'Delete employee',
     delete_employee_title: 'Delete employee',
     delete_employee_confirm: 'Delete {{name}}? {{count}} employee(s) will lose their manager and/or project manager.',
+    delete_department: 'Delete department',
+    delete_department_title: 'Delete department',
+    delete_department_confirm: 'Delete department "{{name}}"?',
+    delete_dept_blocked: 'Move {{employees}} employee(s) and {{sub_depts}} sub-department(s) first.',
   },
   templates: {
     small_business: 'Small business',

@@ -794,7 +794,7 @@ function SchemaScreenInner() {
       .update(patch)
       .eq('id', id)
       .select()
-      .single();
+      .maybeSingle();
     if (error) {
       saveEmpBusyRef.current = false;
       return { ok: false, message: t(extractDbError(error)) };

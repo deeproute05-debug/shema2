@@ -1,6 +1,8 @@
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, UserCircle, Building2, AlertTriangle, ImageIcon, ArrowRight, Briefcase, Trash2 } from 'lucide-react';
+import { X, UserCircle, Building2, AlertTriangle, ImageIcon, ArrowRight, Briefcase, Trash2, Pencil, Save } from 'lucide-react';
 import type { Department, Employee } from '@/core/supabase';
+import { employeeSchema, type EmployeeInput } from '@/core/formsValidation';
 import { getEmployeeProblems, type ProblemType } from './types';
 
 const problemLabels: Record<ProblemType, string> = {
@@ -8,6 +10,10 @@ const problemLabels: Record<ProblemType, string> = {
   no_manager: 'schema.badge_no_manager',
   empty_responsibility_zone: 'schema.badge_empty_zone',
 };
+
+export type SaveEmployeeResult = { ok: boolean; message?: string };
+
+export type EmployeePatch = Partial<Pick<Employee, 'full_name' | 'position' | 'duties' | 'responsibility_zone' | 'is_vacancy'>>;
 
 interface Props {
   open: boolean;
@@ -20,10 +26,11 @@ interface Props {
   onSelectDept: (id: string) => void;
   canEdit?: boolean;
   onRequestDelete?: (kind: 'employee' | 'department', id: string) => void;
+  onSaveEmployee?: (id: string, patch: EmployeePatch) => Promise<SaveEmployeeResult>;
 }
 
 export function SidePanel({
-  open, onClose, selectedDept, selectedEmp, depts, employees, onSelectEmp, onSelectDept, canEdit, onRequestDelete,
+  open, onClose, selectedDept, selectedEmp, depts, employees, onSelectEmp, onSelectDept, canEdit, onRequestDelete, onSaveEmployee,
 }: Props) {
   const { t } = useTranslation();
 
@@ -62,6 +69,8 @@ export function SidePanel({
           onSelectEmp={onSelectEmp}
           canEdit={canEdit}
           onRequestDelete={onRequestDelete}
+          onSaveEmployee={onSaveEmployee}
+          panelOpen={open}
         />
       )}
     </div>
@@ -183,7 +192,7 @@ function DeptDetails({
 }
 
 function EmpDetails({
-  emp, depts, employees, onSelectEmp, canEdit, onRequestDelete,
+  emp, depts, employees, onSelectEmp, canEdit, onRequestDelete, onSaveEmployee, panelOpen,
 }: {
   emp: Employee;
   depts: Department[];
@@ -191,8 +200,25 @@ function EmpDetails({
   onSelectEmp: (id: string) => void;
   canEdit?: boolean;
   onRequestDelete?: (kind: 'employee' | 'department', id: string) => void;
+  onSaveEmployee?: (id: string, patch: EmployeePatch) => Promise<SaveEmployeeResult>;
+  panelOpen: boolean;
 }) {
   const { t } = useTranslation();
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState<EmployeeInput | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  // Reset edit mode whenever the selected employee changes or the panel closes.
+  useEffect(() => {
+    setEditing(false);
+    setForm(null);
+    setFieldErrors({});
+    setFormError(null);
+    setSaving(false);
+  }, [emp.id, panelOpen]);
+
   const dept = depts.find((d) => d.id === emp.department_id);
   const manager = employees.find((e) => e.id === emp.manager_id);
   const pm = employees.find((e) => e.id === emp.project_manager_id);
@@ -206,6 +232,71 @@ function EmpDetails({
     { label: t('employees.duties'), value: emp.duties },
     { label: t('employees.responsibility_zone'), value: emp.responsibility_zone },
   ];
+
+  const startEdit = () => {
+    setForm({
+      full_name: emp.full_name,
+      position: emp.position,
+      department_id: emp.department_id,
+      duties: emp.duties,
+      responsibility_zone: emp.responsibility_zone,
+      manager_id: emp.manager_id,
+      project_manager_id: emp.project_manager_id,
+      is_vacancy: emp.is_vacancy,
+    });
+    setFieldErrors({});
+    setFormError(null);
+    setEditing(true);
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+    setForm(null);
+    setFieldErrors({});
+    setFormError(null);
+  };
+
+  const handleSave = async () => {
+    if (!form || !onSaveEmployee) return;
+    const merged: EmployeeInput = {
+      ...form,
+      full_name: form.is_vacancy ? '' : form.full_name,
+    };
+    const parsed = employeeSchema.safeParse(merged);
+    if (!parsed.success) {
+      const errs: Record<string, string> = {};
+      for (const issue of parsed.error.issues) {
+        errs[issue.path[0] as string] = issue.message;
+      }
+      setFieldErrors(errs);
+      return;
+    }
+    // Send only the editable fields that changed.
+    const patch: EmployeePatch = {};
+    if (parsed.data.full_name !== emp.full_name) patch.full_name = parsed.data.full_name;
+    if (parsed.data.position !== emp.position) patch.position = parsed.data.position;
+    if (parsed.data.duties !== emp.duties) patch.duties = parsed.data.duties;
+    if (parsed.data.responsibility_zone !== emp.responsibility_zone) patch.responsibility_zone = parsed.data.responsibility_zone;
+    if (parsed.data.is_vacancy !== emp.is_vacancy) patch.is_vacancy = parsed.data.is_vacancy;
+    if (Object.keys(patch).length === 0) {
+      setEditing(false);
+      setForm(null);
+      setFieldErrors({});
+      return;
+    }
+    setSaving(true);
+    setFormError(null);
+    const res = await onSaveEmployee(emp.id, patch);
+    if (res.ok) {
+      setEditing(false);
+      setForm(null);
+      setFieldErrors({});
+      setFormError(null);
+    } else {
+      setFormError(res.message ?? t('errors.permission_denied'));
+    }
+    setSaving(false);
+  };
 
   return (
     <div className="space-y-4 p-4">
@@ -239,6 +330,83 @@ function EmpDetails({
 
       <PhotoSlot />
 
+      {editing && form ? (
+        <div className="space-y-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              className="h-5 w-5 rounded border-ink-300 text-brand-600 focus:ring-brand-500"
+              checked={form.is_vacancy}
+              onChange={(e) => setForm({ ...form, is_vacancy: e.target.checked })}
+              disabled={saving}
+            />
+            <span className="text-sm font-medium">{t('employees.is_vacancy')}</span>
+          </label>
+
+          {!form.is_vacancy && (
+            <div className="space-y-1.5">
+              <label className="label" htmlFor="edit-emp-name">{t('employees.full_name')}</label>
+              <input
+                id="edit-emp-name"
+                className="input"
+                value={form.full_name}
+                onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                disabled={saving}
+              />
+              {fieldErrors.full_name && <p className="text-sm text-danger-600">{t(fieldErrors.full_name)}</p>}
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <label className="label" htmlFor="edit-emp-position">{t('employees.position')}</label>
+            <input
+              id="edit-emp-position"
+              className="input"
+              value={form.position}
+              onChange={(e) => setForm({ ...form, position: e.target.value })}
+              disabled={saving}
+            />
+            {fieldErrors.position && <p className="text-sm text-danger-600">{t(fieldErrors.position)}</p>}
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="label" htmlFor="edit-emp-duties">{t('employees.duties')}</label>
+            <textarea
+              id="edit-emp-duties"
+              className="input min-h-[60px]"
+              value={form.duties}
+              onChange={(e) => setForm({ ...form, duties: e.target.value })}
+              disabled={saving}
+            />
+            {fieldErrors.duties && <p className="text-sm text-danger-600">{t(fieldErrors.duties)}</p>}
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="label" htmlFor="edit-emp-zone">{t('employees.responsibility_zone')}</label>
+            <textarea
+              id="edit-emp-zone"
+              className="input min-h-[60px]"
+              value={form.responsibility_zone}
+              onChange={(e) => setForm({ ...form, responsibility_zone: e.target.value })}
+              disabled={saving}
+            />
+            {fieldErrors.responsibility_zone && <p className="text-sm text-danger-600">{t(fieldErrors.responsibility_zone)}</p>}
+          </div>
+
+          {formError && <p className="text-sm text-danger-600">{formError}</p>}
+
+          <div className="flex gap-2">
+            <button onClick={cancelEdit} className="btn-secondary min-h-[44px] flex-1" disabled={saving}>
+              {t('common.cancel')}
+            </button>
+            <button onClick={() => void handleSave()} className="btn-primary min-h-[44px] flex-1" disabled={saving}>
+              {saving ? <Save className="h-4 w-4 animate-pulse" /> : <Save className="h-4 w-4" />}
+              {t('common.save')}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
       {fields.map((f) => (
         <DetailField key={f.label} label={f.label} value={f.value} />
       ))}
@@ -300,6 +468,19 @@ function EmpDetails({
         >
           <Trash2 className="h-4 w-4" />
           {t('schema.delete_employee')}
+        </button>
+      )}
+        </>
+      )}
+
+      {canEdit && !editing && (
+        <button
+          onClick={startEdit}
+          className="btn-secondary mt-2 inline-flex min-h-[44px] w-full items-center justify-center gap-2"
+          aria-label={t('employees.edit')}
+        >
+          <Pencil className="h-4 w-4" />
+          {t('employees.edit')}
         </button>
       )}
     </div>

@@ -144,6 +144,7 @@ export const en = {
     add: 'Add employee',
     create: 'Create employee',
     edit: 'Edit employee',
+    edit_employee: 'Edit employee',
     created: 'Employee added.',
     updated: 'Employee updated.',
     deleted: 'Employee deleted.',

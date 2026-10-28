@@ -12,7 +12,7 @@ import { toastError, toastSuccess, toastInfo } from '@/core/toast';
 import { layoutOrgChart, layoutMatrix, buildPositionMap, detectManagerCycle, detectProjectManagerCycle, NODE_W, DEPT_H, EMP_H, type PositionMap } from '@/schema/layout';
 import { DeptNodeFactory } from '@/schema/DeptNode';
 import { EmpNodeFactory, type ConnectMode } from '@/schema/EmpNode';
-import { SidePanel, type EmployeePatch, type SaveEmployeeResult } from '@/schema/SidePanel';
+import { SidePanel, type EmployeePatch, type SaveEmployeeResult, type DepartmentPatch, type SaveDepartmentResult } from '@/schema/SidePanel';
 import { TEMPLATES } from '@/schema/templates';
 import { useCanEdit } from '@/core/useCanEdit';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -98,6 +98,7 @@ function SchemaScreenInner() {
   const [deleteSaving, setDeleteSaving] = useState(false);
   const deleteBusyRef = useRef(false);
   const saveEmpBusyRef = useRef(false);
+  const saveDeptBusyRef = useRef(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -813,6 +814,33 @@ function SchemaScreenInner() {
     return { ok: true };
   }, [structure, t]);
 
+  const saveDepartment = useCallback(async (id: string, patch: DepartmentPatch): Promise<SaveDepartmentResult> => {
+    if (!structure || saveDeptBusyRef.current) return { ok: false };
+    saveDeptBusyRef.current = true;
+    const { data, error } = await supabase
+      .from('departments')
+      .update(patch)
+      .eq('id', id)
+      .select()
+      .maybeSingle();
+    if (error) {
+      saveDeptBusyRef.current = false;
+      return { ok: false, message: t(extractDbError(error)) };
+    }
+    if (!data) {
+      saveDeptBusyRef.current = false;
+      return { ok: false, message: t('errors.permission_denied') };
+    }
+    // Replace only the updated row; keep other rows unchanged.
+    setStructure((prev) => prev ? {
+      ...prev,
+      depts: prev.depts.map((d) => d.id === id ? (data as Department) : d),
+    } : prev);
+    toastSuccess(t('departments.updated'));
+    saveDeptBusyRef.current = false;
+    return { ok: true };
+  }, [structure, t]);
+
   const nodeTypes = useMemo(() => {
     if (!structure) return undefined;
     return {
@@ -1126,6 +1154,7 @@ function SchemaScreenInner() {
         canEdit={canEdit}
         onRequestDelete={requestDelete}
         onSaveEmployee={saveEmployee}
+        onSaveDepartment={saveDepartment}
       />
 
       <ConfirmDialog

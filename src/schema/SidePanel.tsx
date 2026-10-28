@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, UserCircle, Building2, AlertTriangle, ImageIcon, ArrowRight, Briefcase, Trash2, Pencil, Save } from 'lucide-react';
 import type { Department, Employee } from '@/core/supabase';
-import { employeeSchema, type EmployeeInput } from '@/core/formsValidation';
+import { employeeSchema, departmentSchema, type EmployeeInput, type DepartmentInput } from '@/core/formsValidation';
 import { getEmployeeProblems, type ProblemType } from './types';
 
 const problemLabels: Record<ProblemType, string> = {
@@ -12,8 +12,10 @@ const problemLabels: Record<ProblemType, string> = {
 };
 
 export type SaveEmployeeResult = { ok: boolean; message?: string };
+export type SaveDepartmentResult = SaveEmployeeResult;
 
 export type EmployeePatch = Partial<Pick<Employee, 'full_name' | 'position' | 'duties' | 'responsibility_zone' | 'is_vacancy'>>;
+export type DepartmentPatch = Partial<Pick<Department, 'name' | 'responsibility_zone' | 'desired_result' | 'kpis'>>;
 
 interface Props {
   open: boolean;
@@ -27,10 +29,11 @@ interface Props {
   canEdit?: boolean;
   onRequestDelete?: (kind: 'employee' | 'department', id: string) => void;
   onSaveEmployee?: (id: string, patch: EmployeePatch) => Promise<SaveEmployeeResult>;
+  onSaveDepartment?: (id: string, patch: DepartmentPatch) => Promise<SaveDepartmentResult>;
 }
 
 export function SidePanel({
-  open, onClose, selectedDept, selectedEmp, depts, employees, onSelectEmp, onSelectDept, canEdit, onRequestDelete, onSaveEmployee,
+  open, onClose, selectedDept, selectedEmp, depts, employees, onSelectEmp, onSelectDept, canEdit, onRequestDelete, onSaveEmployee, onSaveDepartment,
 }: Props) {
   const { t } = useTranslation();
 
@@ -58,6 +61,8 @@ export function SidePanel({
           onSelectDept={onSelectDept}
           canEdit={canEdit}
           onRequestDelete={onRequestDelete}
+          onSaveDepartment={onSaveDepartment}
+          panelOpen={open}
         />
       )}
 
@@ -78,7 +83,7 @@ export function SidePanel({
 }
 
 function DeptDetails({
-  dept, depts, employees, onSelectEmp, onSelectDept, canEdit, onRequestDelete,
+  dept, depts, employees, onSelectEmp, onSelectDept, canEdit, onRequestDelete, onSaveDepartment, panelOpen,
 }: {
   dept: Department;
   depts: Department[];
@@ -87,8 +92,25 @@ function DeptDetails({
   onSelectDept: (id: string) => void;
   canEdit?: boolean;
   onRequestDelete?: (kind: 'employee' | 'department', id: string) => void;
+  onSaveDepartment?: (id: string, patch: DepartmentPatch) => Promise<SaveDepartmentResult>;
+  panelOpen: boolean;
 }) {
   const { t } = useTranslation();
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState<DepartmentInput | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  // Reset edit mode whenever the selected department changes or the panel closes.
+  useEffect(() => {
+    setEditing(false);
+    setForm(null);
+    setFieldErrors({});
+    setFormError(null);
+    setSaving(false);
+  }, [dept.id, panelOpen]);
+
   const parent = depts.find((d) => d.id === dept.parent_id);
   const children = depts.filter((d) => d.parent_id === dept.id);
   const deptEmps = employees.filter((e) => e.department_id === dept.id);
@@ -99,6 +121,64 @@ function DeptDetails({
     { label: t('departments.desired_result'), value: dept.desired_result },
     { label: t('departments.kpis'), value: dept.kpis },
   ];
+
+  const startEdit = () => {
+    setForm({
+      name: dept.name,
+      parent_id: dept.parent_id,
+      responsibility_zone: dept.responsibility_zone,
+      desired_result: dept.desired_result,
+      kpis: dept.kpis,
+      color: dept.color,
+    });
+    setFieldErrors({});
+    setFormError(null);
+    setEditing(true);
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+    setForm(null);
+    setFieldErrors({});
+    setFormError(null);
+  };
+
+  const handleSave = async () => {
+    if (!form || !onSaveDepartment) return;
+    const parsed = departmentSchema.safeParse(form);
+    if (!parsed.success) {
+      const errs: Record<string, string> = {};
+      for (const issue of parsed.error.issues) {
+        errs[issue.path[0] as string] = issue.message;
+      }
+      setFieldErrors(errs);
+      return;
+    }
+    // Send only the editable fields that changed.
+    const patch: DepartmentPatch = {};
+    if (parsed.data.name !== dept.name) patch.name = parsed.data.name;
+    if (parsed.data.responsibility_zone !== dept.responsibility_zone) patch.responsibility_zone = parsed.data.responsibility_zone;
+    if (parsed.data.desired_result !== dept.desired_result) patch.desired_result = parsed.data.desired_result;
+    if (parsed.data.kpis !== dept.kpis) patch.kpis = parsed.data.kpis;
+    if (Object.keys(patch).length === 0) {
+      setEditing(false);
+      setForm(null);
+      setFieldErrors({});
+      return;
+    }
+    setSaving(true);
+    setFormError(null);
+    const res = await onSaveDepartment(dept.id, patch);
+    if (res.ok) {
+      setEditing(false);
+      setForm(null);
+      setFieldErrors({});
+      setFormError(null);
+    } else {
+      setFormError(res.message ?? t('errors.permission_denied'));
+    }
+    setSaving(false);
+  };
 
   return (
     <div className="space-y-4 p-4">
@@ -120,6 +200,70 @@ function DeptDetails({
 
       <PhotoSlot />
 
+      {editing && form ? (
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="label" htmlFor="edit-dept-name">{t('departments.name')}</label>
+            <input
+              id="edit-dept-name"
+              className="input"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              disabled={saving}
+            />
+            {fieldErrors.name && <p className="text-sm text-danger-600">{t(fieldErrors.name)}</p>}
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="label" htmlFor="edit-dept-zone">{t('departments.responsibility_zone')}</label>
+            <textarea
+              id="edit-dept-zone"
+              className="input min-h-[60px]"
+              value={form.responsibility_zone}
+              onChange={(e) => setForm({ ...form, responsibility_zone: e.target.value })}
+              disabled={saving}
+            />
+            {fieldErrors.responsibility_zone && <p className="text-sm text-danger-600">{t(fieldErrors.responsibility_zone)}</p>}
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="label" htmlFor="edit-dept-result">{t('departments.desired_result')}</label>
+            <textarea
+              id="edit-dept-result"
+              className="input min-h-[60px]"
+              value={form.desired_result}
+              onChange={(e) => setForm({ ...form, desired_result: e.target.value })}
+              disabled={saving}
+            />
+            {fieldErrors.desired_result && <p className="text-sm text-danger-600">{t(fieldErrors.desired_result)}</p>}
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="label" htmlFor="edit-dept-kpis">{t('departments.kpis')}</label>
+            <textarea
+              id="edit-dept-kpis"
+              className="input min-h-[60px]"
+              value={form.kpis}
+              onChange={(e) => setForm({ ...form, kpis: e.target.value })}
+              disabled={saving}
+            />
+            {fieldErrors.kpis && <p className="text-sm text-danger-600">{t(fieldErrors.kpis)}</p>}
+          </div>
+
+          {formError && <p className="text-sm text-danger-600">{formError}</p>}
+
+          <div className="flex gap-2">
+            <button onClick={cancelEdit} className="btn-secondary min-h-[44px] flex-1" disabled={saving}>
+              {t('common.cancel')}
+            </button>
+            <button onClick={() => void handleSave()} className="btn-primary min-h-[44px] flex-1" disabled={saving}>
+              {saving ? <Save className="h-4 w-4 animate-pulse" /> : <Save className="h-4 w-4" />}
+              {t('common.save')}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
       {fields.map((f) => (
         <DetailField key={f.label} label={f.label} value={f.value} />
       ))}
@@ -185,6 +329,19 @@ function DeptDetails({
         >
           <Trash2 className="h-4 w-4" />
           {t('schema.delete_department')}
+        </button>
+      )}
+        </>
+      )}
+
+      {canEdit && !editing && (
+        <button
+          onClick={startEdit}
+          className="btn-secondary mt-2 inline-flex min-h-[44px] w-full items-center justify-center gap-2"
+          aria-label={t('departments.edit')}
+        >
+          <Pencil className="h-4 w-4" />
+          {t('departments.edit')}
         </button>
       )}
     </div>

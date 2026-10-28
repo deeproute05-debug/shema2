@@ -1,4 +1,4 @@
-import { memo, useState, useRef, useCallback } from 'react';
+import { memo, useState, useRef } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { useTranslation } from 'react-i18next';
 import { Building2, ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react';
@@ -39,14 +39,14 @@ export function DeptNodeFactory(
     const isHighlighted = highlightIds !== null && highlightIds.has(dept.id);
     const allowRename = !!canRename && !!onRename;
 
-    const startRename = useCallback(() => {
+    const startRename = () => {
       setRenameValue(dept.name);
       setRenameError(null);
       savedRef.current = false;
       setRenaming(true);
-    }, [dept.name]);
+    };
 
-    const commitRename = useCallback(async () => {
+    const commitRename = async () => {
       if (savedRef.current) return;
       const trimmed = renameValue.trim();
       const parsed = nameSchema.safeParse(trimmed);
@@ -69,13 +69,13 @@ export function DeptNodeFactory(
         savedRef.current = false;
         setRenameError(res.message ?? t('errors.permission_denied'));
       }
-    }, [renameValue, dept.id, dept.name, onRename, t]);
+    };
 
-    const cancelRename = useCallback(() => {
+    const cancelRename = () => {
       savedRef.current = true;
       setRenaming(false);
       setRenameError(null);
-    }, []);
+    };
 
     const onNameDoubleClick = (e: React.MouseEvent) => {
       if (!allowRename) return;

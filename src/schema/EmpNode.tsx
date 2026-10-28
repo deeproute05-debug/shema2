@@ -1,4 +1,4 @@
-import { memo, useState, useRef, useCallback } from 'react';
+import { memo, useState, useRef } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { useTranslation } from 'react-i18next';
 import { UserCircle, Briefcase, AlertTriangle, Plus, UserPlus, Users } from 'lucide-react';
@@ -71,14 +71,14 @@ export function EmpNodeFactory(
     // Vacancies never allow inline rename (name is hidden/empty).
     const allowRename = !!canRename && !!onRename && !emp.is_vacancy;
 
-    const startRename = useCallback(() => {
+    const startRename = () => {
       setRenameValue(emp.full_name);
       setRenameError(null);
       savedRef.current = false;
       setRenaming(true);
-    }, [emp.full_name]);
+    };
 
-    const commitRename = useCallback(async () => {
+    const commitRename = async () => {
       if (savedRef.current) return;
       const trimmed = renameValue.trim();
       const parsed = fullNameSchema.safeParse(trimmed);
@@ -101,13 +101,13 @@ export function EmpNodeFactory(
         savedRef.current = false;
         setRenameError(res.message ?? t('errors.permission_denied'));
       }
-    }, [renameValue, emp.id, emp.full_name, onRename, t]);
+    };
 
-    const cancelRename = useCallback(() => {
+    const cancelRename = () => {
       savedRef.current = true;
       setRenaming(false);
       setRenameError(null);
-    }, []);
+    };
 
     const onNameDoubleClick = (e: React.MouseEvent) => {
       if (!allowRename) return;

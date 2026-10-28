@@ -841,10 +841,20 @@ function SchemaScreenInner() {
     return { ok: true };
   }, [structure, t]);
 
+  const renameEmp = useCallback(async (id: string, newName: string): Promise<{ ok: boolean; message?: string }> => {
+    return saveEmployee(id, { full_name: newName });
+  }, [saveEmployee]);
+
+  const renameDept = useCallback(async (id: string, newName: string): Promise<{ ok: boolean; message?: string }> => {
+    return saveDepartment(id, { name: newName });
+  }, [saveDepartment]);
+
   const nodeTypes = useMemo(() => {
     if (!structure) return undefined;
+    const canRenameEmp = canEdit && (tab === 'org' || tab === 'matrix') && connectMode === 'none' && (!coarsePointer || touchEdit);
+    const canRenameDept = canEdit && (tab === 'org' || tab === 'matrix') && connectMode === 'none' && (!coarsePointer || touchEdit);
     return {
-      deptNode: DeptNodeFactory(structure.depts, structure.emps, handleSelectDept, toggleCollapse, collapsed, highlightIds),
+      deptNode: DeptNodeFactory(structure.depts, structure.emps, handleSelectDept, toggleCollapse, collapsed, highlightIds, canRenameDept, renameDept),
       empNode: EmpNodeFactory(
         structure.emps, structure.depts, handleSelectEmp, highlightIds,
         canEdit && tab === 'matrix' && connectMode !== 'none' && (!coarsePointer || touchEdit),
@@ -855,13 +865,15 @@ function SchemaScreenInner() {
         coarsePointer,
         handleAddEmployee,
         canEdit && (tab === 'org' || tab === 'matrix') && connectMode === 'none' && (!coarsePointer || touchEdit),
+        canRenameEmp,
+        renameEmp,
       ),
       freeNode: FreeNodeFactory(structure.freeNodes),
     };
   }, [
     structure, handleSelectDept, handleSelectEmp, toggleCollapse, collapsed, highlightIds,
     canEdit, tab, connectMode, coarsePointer, touchEdit, pendingConnectSource, handleConnectTarget,
-    handleSetConnectSource, handleAddEmployee,
+    handleSetConnectSource, handleAddEmployee, renameEmp, renameDept,
   ]);
 
   const handleResetLayout = useCallback(async () => {
@@ -993,6 +1005,7 @@ function SchemaScreenInner() {
             selectionOnDrag={false}
             panOnScroll={false}
             zoomOnPinch
+            zoomOnDoubleClick={false}
             nodeDragThreshold={coarsePointer ? 8 : undefined}
             preventScrolling
           >

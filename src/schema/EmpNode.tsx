@@ -1,8 +1,9 @@
-import { memo, useState } from 'react';
+import { memo, useState, useRef, useCallback } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { useTranslation } from 'react-i18next';
 import { UserCircle, Briefcase, AlertTriangle, Plus, UserPlus, Users } from 'lucide-react';
 import type { Employee, Department } from '@/core/supabase';
+import { employeeSchema } from '@/core/formsValidation';
 import { getEmployeeProblems, type ProblemType } from './types';
 
 const problemLabels: Record<ProblemType, string> = {
@@ -12,6 +13,10 @@ const problemLabels: Record<ProblemType, string> = {
 };
 
 export type ConnectMode = 'none' | 'manager' | 'pm' | 'dept';
+
+export type RenameResult = { ok: boolean; message?: string };
+
+const fullNameSchema = employeeSchema.shape.full_name;
 
 export function EmpNodeFactory(
   employees: Employee[],
@@ -26,10 +31,20 @@ export function EmpNodeFactory(
   coarsePointer?: boolean,
   onAddEmployee?: (empId: string, kind: 'subordinate' | 'colleague') => void,
   showAddButton?: boolean,
+  canRename?: boolean,
+  onRename?: (id: string, newName: string) => Promise<RenameResult>,
 ) {
   const Component = memo(({ data, selected }: NodeProps) => {
     const { t } = useTranslation();
     const [addMenuOpen, setAddMenuOpen] = useState(false);
+    // Inline rename state — declared above the early return so hooks order is stable.
+    const [renaming, setRenaming] = useState(false);
+    const [renameValue, setRenameValue] = useState('');
+    const [renameError, setRenameError] = useState<string | null>(null);
+    const renameInputRef = useRef<HTMLInputElement | null>(null);
+    const lastTapRef = useRef(0);
+    const savedRef = useRef(false); // prevents double save (Enter/Escape vs blur)
+
     const emp = employees.find((e) => e.id === (data as { empId: string }).empId);
     if (!emp) return null;
     const dept = depts.find((d) => d.id === emp.department_id);
@@ -53,6 +68,85 @@ export function EmpNodeFactory(
     const hasPendingSource = pendingConnectSource !== null;
     const isPendingTarget = hasPendingSource && pendingConnectSource !== emp.id;
     const canShowAdd = !!showAddButton && !!onAddEmployee && !isConnectMode && !showHandles;
+    // Vacancies never allow inline rename (name is hidden/empty).
+    const allowRename = !!canRename && !!onRename && !emp.is_vacancy;
+
+    const startRename = useCallback(() => {
+      setRenameValue(emp.full_name);
+      setRenameError(null);
+      savedRef.current = false;
+      setRenaming(true);
+    }, [emp.full_name]);
+
+    const commitRename = useCallback(async () => {
+      if (savedRef.current) return;
+      const trimmed = renameValue.trim();
+      const parsed = fullNameSchema.safeParse(trimmed);
+      if (!parsed.success) {
+        setRenameError(t(parsed.error.issues[0]?.message ?? 'employees.name_required_unless_vacancy'));
+        return;
+      }
+      if (parsed.data === emp.full_name) {
+        savedRef.current = true;
+        setRenaming(false);
+        setRenameError(null);
+        return;
+      }
+      savedRef.current = true;
+      const res = onRename ? await onRename(emp.id, parsed.data) : { ok: false };
+      if (res.ok) {
+        setRenaming(false);
+        setRenameError(null);
+      } else {
+        savedRef.current = false;
+        setRenameError(res.message ?? t('errors.permission_denied'));
+      }
+    }, [renameValue, emp.id, emp.full_name, onRename, t]);
+
+    const cancelRename = useCallback(() => {
+      savedRef.current = true;
+      setRenaming(false);
+      setRenameError(null);
+    }, []);
+
+    const onNameDoubleClick = (e: React.MouseEvent) => {
+      if (!allowRename) return;
+      e.stopPropagation();
+      startRename();
+    };
+
+    const onNameTap = (e: React.PointerEvent) => {
+      if (!allowRename) return;
+      e.stopPropagation();
+      const now = Date.now();
+      if (now - lastTapRef.current < 350) {
+        startRename();
+        lastTapRef.current = 0;
+      } else {
+        lastTapRef.current = now;
+      }
+    };
+
+    const onRenameKeyDown = (e: React.KeyboardEvent) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        void commitRename();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelRename();
+      }
+    };
+
+    const onRenameBlur = () => {
+      if (savedRef.current) return;
+      if (renameValue.trim() !== emp.full_name) {
+        void commitRename();
+      } else {
+        setRenaming(false);
+        setRenameError(null);
+      }
+    };
 
     return (
       <div
@@ -147,12 +241,42 @@ export function EmpNodeFactory(
             <UserCircle className="h-5 w-5 shrink-0 text-brand-500" />
           )}
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">
-              {emp.is_vacancy ? t('employees.vacancy_label') : emp.full_name}
-            </p>
-            <p className="truncate text-xs text-ink-400">{emp.position}</p>
+            {renaming ? (
+              <input
+                ref={renameInputRef}
+                type="text"
+                className={`nodrag nopan nowheel w-full rounded border bg-white px-1 text-sm font-medium text-ink-900 outline-none min-h-[44px] ${
+                  renameError ? 'border-danger-500' : 'border-brand-400'
+                } dark:bg-ink-800 dark:text-ink-100`}
+                value={renameValue}
+                maxLength={200}
+                autoFocus
+                onFocus={(e) => e.target.select()}
+                onChange={(e) => { setRenameValue(e.target.value); setRenameError(null); }}
+                onPointerDown={(e) => e.stopPropagation()}
+                onKeyDown={onRenameKeyDown}
+                onBlur={onRenameBlur}
+                aria-invalid={!!renameError}
+                title={renameError ?? undefined}
+              />
+            ) : (
+              <p
+                className="truncate text-sm font-medium select-none"
+                onDoubleClick={onNameDoubleClick}
+                onPointerDown={onNameTap}
+                title={allowRename ? t('schema.rename_hint') : undefined}
+              >
+                {emp.is_vacancy ? t('employees.vacancy_label') : emp.full_name}
+              </p>
+            )}
+            {renaming && renameError && (
+              <p className="mt-0.5 text-xs text-danger-600">{renameError}</p>
+            )}
+            {!renaming && (
+              <p className="truncate text-xs text-ink-400">{emp.position}</p>
+            )}
           </div>
-          {problems.length > 0 && (
+          {problems.length > 0 && !renaming && (
             <span title={problems.map((p) => t(problemLabels[p])).join(', ')}>
               <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning-500" />
             </span>

@@ -260,6 +260,7 @@ export const en = {
     delete_department_title: 'Delete department',
     delete_department_confirm: 'Delete department "{{name}}"?',
     delete_dept_blocked: 'Move {{employees}} employee(s) and {{sub_depts}} sub-department(s) first.',
+    rename_hint: 'Double-click to rename',
   },
   templates: {
     small_business: 'Small business',
